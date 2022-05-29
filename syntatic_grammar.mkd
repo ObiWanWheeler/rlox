@@ -1,0 +1,12 @@
+expression -> equality ;
+equality -> comparison ( ( "!=" | "==" ) comparison )\* ;
+comparison -> term (( < | > | <= | >= ) term)\* ;
+term -> factor ( ( "+" | "-" ) term )\* ;
+factor -> unary ( ("/" | "\*") unary )\* ; ;
+unary -> ( "!" | "-" ) unary | primary ;
+primary -> literal | grouping ;
+
+literal -> NUMBER | STRING | "true" | "false" | nil ;
+grouping -> "(" expression ")" ;
+binary -> expression operator expression ;
+operator -> "\*" | "/" | "%" | "+" | "-" | "==" | "!=" | "<" | ">" | "<=" | ">=" ;

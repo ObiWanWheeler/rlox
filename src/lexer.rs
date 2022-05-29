@@ -1,35 +1,11 @@
-use phf::phf_map;
+use crate::{common::*, lexer_error, lox, token};
 use thiserror::Error;
-
-macro_rules! token {
-    ($self: ident, $tok_type: tt, $raw: expr) => {
-        Token::new(TokenType::$tok_type, $raw.to_string(), $self.cursor_offset)
-    };
-}
-
-static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
-   "and" => TokenType::And,
-   "class" => TokenType::Class,
-   "else" => TokenType::Else,
-   "false" => TokenType::False,
-   "funct" => TokenType::Funct,
-   "for" => TokenType::For,
-   "if" => TokenType::If,
-   "nil" => TokenType::Nil,
-   "or" => TokenType::Or,
-   "print" => TokenType::Print,
-   "return" => TokenType::Return,
-   "super" => TokenType::Super,
-   "this" => TokenType::This,
-   "true" => TokenType::True,
-   "var" => TokenType::Var,
-   "while" => TokenType::While,
-};
 
 pub struct Lexer<'a> {
     source: std::iter::Peekable<std::str::Chars<'a>>,
-    tokens: Vec<Result<Token, LexerError>>,
-    cursor_offset: u32,
+    tokens: Vec<Token>,
+    line: u32,
+    column: u32,
 }
 
 impl<'a> Lexer<'a> {
@@ -37,7 +13,8 @@ impl<'a> Lexer<'a> {
         Self {
             source: source.chars().peekable(),
             tokens: vec![],
-            cursor_offset: 0,
+            line: 1,
+            column: 1,
         }
     }
 
@@ -84,7 +61,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn consume_char(&mut self) -> Option<char> {
-        self.cursor_offset += 1;
+        if let Some(c) = self.source.peek() {
+            if *c == '\n' {
+                self.line += 1;
+                self.column = 1;
+            } else {
+                self.column += 1;
+            }
+        }
+
         self.source.next()
     }
 
@@ -93,8 +78,10 @@ impl<'a> Lexer<'a> {
         let mut buf = String::new();
         loop {
             match self.consume_char() {
-                None => return Err(LexerError::UnclosedStringLiteral { literal: buf }),
-                Some(c) if c == '"' => return Ok(token!(self, Strang, buf)),
+                None => {
+                    return Err(self.error(LexerErrorKind::UnclosedStringLiteral { literal: buf }))
+                }
+                Some(c) if c == '"' => return Ok(token!(Strang, buf, (self.line, self.column))),
                 Some(c) => buf.push(c),
             }
         }
@@ -106,48 +93,57 @@ impl<'a> Lexer<'a> {
 
         loop {
             match self.source.peek() {
-                None => return Ok(token!(self, Number, buf)),
+                None => return Ok(token!(Number, buf, (self.line, self.column))),
                 Some(c) if *c == '.' => {
                     if seen_dp {
                         // can't have two decimal points
                         // push for error
                         buf.push(*c);
-                        return Err(LexerError::InvalidNumberLiteral {
+                        return Err(self.error(LexerErrorKind::InvalidNumberLiteral {
                             literal: buf,
-                            symbol: *c,
-                        });
+                            symbol: '.',
+                        }));
                     } else {
                         seen_dp = true;
                         buf.push(self.consume_char().unwrap());
                         // make sure . followed by a number
                         match self.source.peek() {
                             None => {
-                                return Err(LexerError::InvalidNumberLiteral {
+                                return Err(self.error(LexerErrorKind::InvalidNumberLiteral {
                                     literal: buf,
                                     symbol: '.',
-                                })
+                                }));
                             }
                             Some(c) if !c.is_digit(10) => {
-                                return Err(LexerError::InvalidNumberLiteral {
+                                let err = self.error(LexerErrorKind::InvalidNumberLiteral {
                                     literal: buf,
                                     symbol: '.',
-                                })
+                                });
+                                return Err(err);
                             }
                             Some(_) => buf.push(self.consume_char().unwrap()),
                         }
                     }
                 }
-                Some(c) if !c.is_digit(10) => {
-                    return Err(LexerError::InvalidNumberLiteral {
+                Some(c) if c.is_whitespace() || *c == ';' || *c == ')' => break,
+                Some(c) if c.is_ascii_alphabetic() => {
+                    let kind = LexerErrorKind::InvalidNumberLiteral {
                         literal: buf,
                         symbol: *c,
-                    });
+                    };
+                    println!(
+                        "line {} column {}: {}",
+                        self.line,
+                        self.column,
+                        kind.to_string()
+                    );
+                    lox::report_error();
+                    return Err(lexer_error!(kind, (self.line, self.column)));
                 }
-                Some(c) if c.is_whitespace() => break,
                 Some(_) => buf.push(self.consume_char().unwrap()),
             }
         }
-        Ok(token!(self, Number, buf))
+        Ok(token!(Number, buf, (self.line, self.column)))
     }
 
     fn parse_identifier(&mut self, start: char) -> Result<Token, LexerError> {
@@ -162,59 +158,89 @@ impl<'a> Lexer<'a> {
         }
 
         // check if it's a keyword
+        // it is a keyword
         if let Some(token_type) = KEYWORDS.get(&buf).cloned() {
-            // it is a keyword
-            return Ok(Token::new(token_type, buf, self.cursor_offset));
+            return Ok(Token {
+                token_type,
+                raw: buf,
+                line: self.line,
+                column: self.column,
+            });
         } else {
             // it's a plain ol' identifier
-            return Ok(token!(self, Identifier, buf));
+            return Ok(token!(Identifier, buf, (self.line, self.column)));
         }
     }
 
     fn lex_token(&mut self) {
         if let Some(c) = self.consume_char() {
             match c {
-                '(' => self.tokens.push(Ok(token!(self, LeftParen, "("))),
-                ')' => self.tokens.push(Ok(token!(self, RightParen, ")"))),
-                '{' => self.tokens.push(Ok(token!(self, LeftBrace, "{"))),
-                '}' => self.tokens.push(Ok(token!(self, RightBrace, "}"))),
-                ',' => self.tokens.push(Ok(token!(self, Comma, ","))),
-
-                '.' => self.tokens.push(Ok(token!(self, Dot, "."))),
-                '-' => self.tokens.push(Ok(token!(self, Minus, "-"))),
-                '+' => self.tokens.push(Ok(token!(self, Plus, "+"))),
-                '*' => self.tokens.push(Ok(token!(self, Star, "*"))),
-                ';' => self.tokens.push(Ok(token!(self, SemiColon, ";"))),
+                '(' => self
+                    .tokens
+                    .push(token!(LeftParen, "(", (self.line, self.column))),
+                ')' => self
+                    .tokens
+                    .push(token!(RightParen, ")", (self.line, self.column))),
+                '{' => self
+                    .tokens
+                    .push(token!(LeftBrace, "{", (self.line, self.column))),
+                '}' => self
+                    .tokens
+                    .push(token!(RightBrace, "}", (self.line, self.column))),
+                ',' => self
+                    .tokens
+                    .push(token!(Comma, ",", (self.line, self.column))),
+                '.' => self.tokens.push(token!(Dot, ".", (self.line, self.column))),
+                '-' => self
+                    .tokens
+                    .push(token!(Minus, "-", (self.line, self.column))),
+                '+' => self
+                    .tokens
+                    .push(token!(Plus, "+", (self.line, self.column))),
+                '*' => self
+                    .tokens
+                    .push(token!(Star, "*", (self.line, self.column))),
+                ';' => self
+                    .tokens
+                    .push(token!(SemiColon, ";", (self.line, self.column))),
                 '!' => {
                     if self.match_next('=') {
                         self.consume_char();
-                        self.tokens.push(Ok(token!(self, BangEqual, "!=")));
+                        self.tokens
+                            .push(token!(BangEqual, "!=", (self.line, self.column)));
                     } else {
-                        self.tokens.push(Ok(token!(self, Bang, "!")));
+                        self.tokens
+                            .push(token!(Bang, "!", (self.line, self.column)));
                     }
                 }
                 '<' => {
                     if self.match_next('=') {
                         self.consume_char();
-                        self.tokens.push(Ok(token!(self, LessEqual, "<=")));
+                        self.tokens
+                            .push(token!(LessEqual, "<=", (self.line, self.column)));
                     } else {
-                        self.tokens.push(Ok(token!(self, Less, "<")));
+                        self.tokens
+                            .push(token!(Less, "<", (self.line, self.column)));
                     }
                 }
                 '>' => {
                     if self.match_next('=') {
                         self.consume_char();
-                        self.tokens.push(Ok(token!(self, GreaterEqual, ">=")));
+                        self.tokens
+                            .push(token!(GreaterEqual, ">=", (self.line, self.column)));
                     } else {
-                        self.tokens.push(Ok(token!(self, Greater, ">")));
+                        self.tokens
+                            .push(token!(Greater, ">", (self.line, self.column)));
                     }
                 }
                 '=' => {
                     if self.match_next('=') {
                         self.consume_char();
-                        self.tokens.push(Ok(token!(self, EqualEqual, "==")));
+                        self.tokens
+                            .push(token!(EqualEqual, "==", (self.line, self.column)));
                     } else {
-                        self.tokens.push(Ok(token!(self, Equal, "=")));
+                        self.tokens
+                            .push(token!(Equal, "=", (self.line, self.column)));
                     }
                 }
                 '/' => {
@@ -225,26 +251,42 @@ impl<'a> Lexer<'a> {
                         // it's a line comment
                         self.skip_block_comment();
                     } else {
-                        self.tokens.push(Ok(token!(self, Slash, "/")));
+                        self.tokens
+                            .push(token!(Slash, "/", (self.line, self.column)));
                     }
                 }
                 '"' => {
                     let string_tok = self.parse_string();
-                    self.tokens.push(string_tok);
+                    match string_tok {
+                        Ok(tok) => self.tokens.push(tok),
+                        Err(e) => {
+                            self.error(e.kind);
+                        }
+                    }
                 }
                 c if c.is_whitespace() => self.skip_whitespace(),
                 '0'..='9' => {
                     let num_tok = self.parse_num(c);
-                    self.tokens.push(num_tok);
+                    match num_tok {
+                        Ok(tok) => self.tokens.push(tok),
+                        Err(e) => {
+                            self.error(e.kind);
+                        }
+                    }
                 }
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     let ident_tok = self.parse_identifier(c);
-                    self.tokens.push(ident_tok);
+                    match ident_tok {
+                        Ok(tok) => self.tokens.push(tok),
+                        Err(e) => {
+                            self.error(e.kind);
+                        }
+                    }
                 }
 
-                _ => self
-                    .tokens
-                    .push(Err(LexerError::UnrecognisedSymbol { symbol: c })),
+                _ => {
+                    self.error(LexerErrorKind::UnrecognisedSymbol { symbol: c });
+                }
             }
         }
     }
@@ -253,22 +295,39 @@ impl<'a> Lexer<'a> {
         self.source.peek() == None
     }
 
+    fn error(&self, kind: LexerErrorKind) -> LexerError {
+        println!(
+            "lexer: line {} column {}: {}",
+            self.line,
+            self.column,
+            kind.to_string()
+        );
+        lox::report_error();
+        lexer_error!(kind, (self.line, self.column))
+    }
+
     // don't have to reference self, as lexer is effectively useless after this has been called
     // so we may take ownership
-    pub fn collect_tokens(mut self) -> Vec<Result<Token, LexerError>> {
+    pub fn collect_tokens(mut self) -> Vec<Token> {
         while !self.is_at_end() {
             self.lex_token();
         }
 
-        self.cursor_offset += 1;
-        self.tokens.push(Ok(token!(self, EOF, "")));
+        self.tokens.push(token!(EOF, "", (self.line, self.column)));
 
         self.tokens
     }
 }
 
+#[derive(Debug)]
+pub struct LexerError {
+    pub kind: LexerErrorKind,
+    pub line: u32,
+    pub column: u32,
+}
+
 #[derive(Error, Debug)]
-pub enum LexerError {
+pub enum LexerErrorKind {
     #[error("unrecognised symbol {symbol}")]
     UnrecognisedSymbol { symbol: char },
 
@@ -277,74 +336,4 @@ pub enum LexerError {
 
     #[error("invalid numeric literal {literal}. invalid symbol {symbol}")]
     InvalidNumberLiteral { literal: String, symbol: char },
-}
-
-#[allow(dead_code)]
-#[derive(Debug, PartialEq, Clone)]
-pub enum TokenType {
-    // punctuation
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Comma,
-    Dot,
-    SemiColon,
-
-    // operators
-    Minus,
-    Plus,
-    Slash,
-    Star,
-    Bang,
-    BangEqual,
-    Equal,
-    EqualEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-
-    // literals
-    Identifier,
-    Strang,
-    Number,
-
-    // keywords
-    And,
-    Class,
-    Else,
-    False,
-    Funct,
-    For,
-    If,
-    Nil,
-    Or,
-    Print,
-    Return,
-    Super,
-    This,
-    True,
-    Var,
-    While,
-
-    EOF,
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-pub struct Token {
-    token_type: TokenType,
-    raw: String,
-    cursor_offset: u32,
-}
-
-impl Token {
-    pub fn new(token_type: TokenType, raw: String, cursor_offset: u32) -> Self {
-        Self {
-            token_type,
-            raw,
-            cursor_offset,
-        }
-    }
 }
