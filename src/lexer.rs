@@ -1,12 +1,11 @@
-use thiserror::Error;
 use phf::phf_map;
+use thiserror::Error;
 
 macro_rules! token {
     ($self: ident, $tok_type: tt, $raw: expr) => {
         Token::new(TokenType::$tok_type, $raw.to_string(), $self.cursor_offset)
     };
 }
-
 
 static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
    "and" => TokenType::And,
@@ -27,8 +26,6 @@ static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
    "while" => TokenType::While,
 };
 
-
-
 pub struct Lexer<'a> {
     source: std::iter::Peekable<std::str::Chars<'a>>,
     tokens: Vec<Result<Token, LexerError>>,
@@ -44,16 +41,39 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn match_next(&self, want: char) -> bool {
+    fn match_next(&mut self, want: char) -> bool {
         if let Some(next) = self.source.peek() {
             return *next == want;
         }
         return false;
     }
 
-    fn skip_comment(&mut self) {
+    fn skip_line_comment(&mut self) {
         while !self.is_at_end() && *self.source.peek().unwrap() != '\n' {
             self.consume_char();
+        }
+    }
+
+    fn skip_block_comment(&mut self) {
+        // cursor starts on  first *, consume that
+        self.consume_char();
+
+        loop {
+            match self.consume_char() {
+                None => break,
+                Some(c) if c == '*' => {
+                    match self.source.peek() {
+                        None => {}
+                        Some(c) if *c == '/' => {
+                            // end of block comment
+                            self.consume_char();
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -63,14 +83,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn consume_char(&self) -> Option<char> {
+    fn consume_char(&mut self) -> Option<char> {
         self.cursor_offset += 1;
         self.source.next()
     }
 
     fn parse_string(&mut self) -> Result<Token, LexerError> {
         //TODO add escape sequences, \n , \t etc.
-        let buf = String::new();
+        let mut buf = String::new();
         loop {
             match self.consume_char() {
                 None => return Err(LexerError::UnclosedStringLiteral { literal: buf }),
@@ -113,7 +133,7 @@ impl<'a> Lexer<'a> {
                                     symbol: '.',
                                 })
                             }
-                            Some(c) => buf.push(self.consume_char().unwrap()),
+                            Some(_) => buf.push(self.consume_char().unwrap()),
                         }
                     }
                 }
@@ -124,7 +144,7 @@ impl<'a> Lexer<'a> {
                     });
                 }
                 Some(c) if c.is_whitespace() => break,
-                Some(c) => buf.push(self.consume_char().unwrap()),
+                Some(_) => buf.push(self.consume_char().unwrap()),
             }
         }
         Ok(token!(self, Number, buf))
@@ -137,7 +157,7 @@ impl<'a> Lexer<'a> {
             match self.source.peek() {
                 None => break,
                 Some(c) if c.is_ascii_alphanumeric() => buf.push(self.consume_char().unwrap()),
-                Some(c) => return Err(LexerError::InvalidIdentifier { identifier: buf, symbol: *c })
+                Some(_) => break,
             }
         }
 
@@ -145,8 +165,7 @@ impl<'a> Lexer<'a> {
         if let Some(token_type) = KEYWORDS.get(&buf).cloned() {
             // it is a keyword
             return Ok(Token::new(token_type, buf, self.cursor_offset));
-        }
-        else {
+        } else {
             // it's a plain ol' identifier
             return Ok(token!(self, Identifier, buf));
         }
@@ -201,15 +220,27 @@ impl<'a> Lexer<'a> {
                 '/' => {
                     if self.match_next('/') {
                         // it's a comment, carry on till end of line
-                        self.skip_comment();
+                        self.skip_line_comment();
+                    } else if self.match_next('*') {
+                        // it's a line comment
+                        self.skip_block_comment();
                     } else {
                         self.tokens.push(Ok(token!(self, Slash, "/")));
                     }
                 }
-                '"' => self.tokens.push(self.parse_string()),
+                '"' => {
+                    let string_tok = self.parse_string();
+                    self.tokens.push(string_tok);
+                }
                 c if c.is_whitespace() => self.skip_whitespace(),
-                '0'..='9' => self.tokens.push(self.parse_num(c)),
-                c if c.is_ascii_alphabetic() || c == '_' => self.tokens.push(self.parse_identifier(c)),
+                '0'..='9' => {
+                    let num_tok = self.parse_num(c);
+                    self.tokens.push(num_tok);
+                }
+                c if c.is_ascii_alphabetic() || c == '_' => {
+                    let ident_tok = self.parse_identifier(c);
+                    self.tokens.push(ident_tok);
+                }
 
                 _ => self
                     .tokens
@@ -218,7 +249,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn is_at_end(&self) -> bool {
+    pub fn is_at_end(&mut self) -> bool {
         self.source.peek() == None
     }
 
@@ -229,7 +260,9 @@ impl<'a> Lexer<'a> {
             self.lex_token();
         }
 
+        self.cursor_offset += 1;
         self.tokens.push(Ok(token!(self, EOF, "")));
+
         self.tokens
     }
 }
@@ -244,9 +277,6 @@ pub enum LexerError {
 
     #[error("invalid numeric literal {literal}. invalid symbol {symbol}")]
     InvalidNumberLiteral { literal: String, symbol: char },
-
-    #[error("invalid identifier {identifier}. invalid symbol {symbol}")]
-    InvalidIdentifier { identifier: String, symbol: char }
 }
 
 #[allow(dead_code)]
@@ -301,6 +331,7 @@ pub enum TokenType {
     EOF,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Token {
     token_type: TokenType,

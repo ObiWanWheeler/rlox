@@ -1,4 +1,6 @@
 mod lexer;
+use std::io::Write;
+
 use lexer::Lexer;
 
 use clap::Parser;
@@ -39,6 +41,7 @@ fn run_file(file_path: &str) {
 fn run_interactive() {
     loop {
         print!(":> ");
+        std::io::stdout().flush().unwrap();
         let mut input = String::new();
         std::io::stdin()
             .read_line(&mut input)
@@ -56,9 +59,14 @@ fn run_interactive() {
 
 fn run(source: &str) -> Result<(), Box<dyn std::error::Error>> {
     let lexer = Lexer::new(source);
-    let tokens = lexer.collect_tokens()?;
+    let tokens = lexer.collect_tokens();
 
-    println!("{:?}", tokens);
-
+    for tok in tokens {
+        match tok {
+            Err(e) => println!("{:?}", e),
+            Ok(t) => println!("{:?}", t),
+        }
+    }
+    
     Ok(())
 }

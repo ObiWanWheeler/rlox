@@ -1,0 +1,8 @@
+/* this is a multi-line comment
+   wow
+   wow
+   wow
+*/
+
+var x = 2.64;
+print("hello world");
