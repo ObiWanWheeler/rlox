@@ -25,6 +25,9 @@ impl Visitor<String, ParseError> for AstPrinter {
             Expr::Variable { name } => {
                 Ok(name.raw.clone())
             }
+            Expr::Assign { name, value } => {
+                Ok(format!("{} = {}", name.raw, self.visit_expr(value)?))
+            }
         }
     }
 }

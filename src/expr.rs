@@ -1,7 +1,11 @@
-use crate::common::Token;
+use crate::common::{Token, LiteralType};
 
-#[derive(Debug)]
 pub enum Expr {
+    Assign {
+        name: Token,
+        value: Box<Expr>,
+    },
+
     Binary {
         left: Box<Expr>,
         right: Box<Expr>,
@@ -22,30 +26,8 @@ pub enum Expr {
     },
 
     Variable {
-        name: Token
-    }
-
-}
-
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
-pub enum LiteralType {
-    Number(f32),
-    Strang(String),
-    Bool(bool),
-    Nil,
-}
-
-
-
-impl ToString for LiteralType {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Number(v) => v.to_string(),
-            Self::Strang(v) => v.to_string(),
-            Self::Bool(v) => v.to_string(),
-            Self::Nil => "nil".to_string(),
-        }
-    }
+        name: Token,
+    },
 }
 
 pub trait Visitor<R, E> {

@@ -1,7 +1,7 @@
 use crate::{
-    common::{Token, TokenType},
+    common::{Token, TokenType, LiteralType},
     environment::Environment,
-    expr::{self, LiteralType},
+    expr,
     lox, stmt,
 };
 
@@ -143,6 +143,11 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                 }
             }
             expr::Expr::Variable { name } => self.environment.get(name),
+            expr::Expr::Assign { name, value } => {
+                let value = self.evaluate(value)?;
+                self.environment.assign(name, value.clone())?;
+                Ok(value)
+            }
         }
     }
 }

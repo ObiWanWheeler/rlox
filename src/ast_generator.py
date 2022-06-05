@@ -21,28 +21,29 @@ def define_ast(output_file, base, types: List[str]):
 
                 f.write(f'    {field_name.strip()}: {type.strip()},\n')
             f.write('},\n\n')
-        f.write("}\n\n")
+            f.write("}\n\n")
+        
+            f.write(f'pub trait Visitor<R, E> {{\n')
 
-        f.write(f'pub trait Visitor<R, E> {{\n')
-
-        f.write(f'  fn visit_{base.lower()}(&mut self, expr: &Expr) -> Result<R, E>;\n')
-        f.write("}\n\n")
+            f.write(f'  fn visit_{base.lower()}(&mut self, {base.lower()}: &{base}) -> Result<R, E>;\n')
+            f.write("}\n\n")
 
 
 if __name__ == "__main__":
     expr_types = [
+        "Assign: name Token, value Box<Expr>",
         "Binary: left Box<Expr>, right Box<Expr>, operator Token",
         "Grouping: expression Box<Expr>",
-        "Literal: value String",
+        "Literal: value LiteralType",
         "Unary: operator Token, right Box<Expr>",
         "Variable: name Token"
     ]
-    # define_ast("src/expr.rs", "Expr", expr_types)
+    define_ast("src/expr_new.rs", "Expr", expr_types)
 
     stmt_types = [
             "Expression: expression Expr",
             "Print: expression Expr",
-            "Var: name Token, initializer Expr"
+            "Var: name Token, initializer Option<Expr>"
             ]    
-    define_ast("src/stmt.rs", "Stmt", stmt_types)
+    define_ast("src/stmt_new.rs", "Stmt", stmt_types)
 

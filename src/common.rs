@@ -102,3 +102,21 @@ pub struct Token {
     pub line: u32,
     pub column: u32,
 }
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum LiteralType {
+    Number(f32),
+    Strang(String),
+    Bool(bool),
+    Nil,
+}
+
+impl ToString for LiteralType {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Number(v) => v.to_string(),
+            Self::Strang(v) => v.to_string(),
+            Self::Bool(v) => v.to_string(),
+            Self::Nil => "nil".to_string(),
+        }
+    }
+}

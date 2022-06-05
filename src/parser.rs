@@ -1,8 +1,8 @@
 use std::vec::IntoIter;
 
 use crate::{
-    common::{Token, TokenType},
-    expr::{Expr, LiteralType},
+    common::{Token, TokenType, LiteralType},
+    expr::Expr,
     lox,
     stmt::Stmt,
     token,
@@ -72,7 +72,24 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr, ParseError> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr, ParseError> {
+        let expr = self.equality()?;
+
+        if self.match_next_token(&[TokenType::Equal]) {
+            let equals = self.consume_token().unwrap();
+            let value = self.assignment()?;
+
+            if let Expr::Variable { name } = expr {
+                return Ok(Expr::Assign { name, value: Box::new(value) });
+            }
+
+            self.error(&equals, "Invalid assignment target.");
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr, ParseError> {
