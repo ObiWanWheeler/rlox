@@ -1,4 +1,3 @@
-import sys
 from typing import List
 
 # types like
@@ -24,18 +23,26 @@ def define_ast(output_file, base, types: List[str]):
             f.write('},\n\n')
         f.write("}\n\n")
 
-        f.write(f'pub trait Visitor<R> {{\n')
+        f.write(f'pub trait Visitor<R, E> {{\n')
 
-        f.write('  fn visit_expr(&mut self, expr: &Expr) -> R;\n')
+        f.write(f'  fn visit_{base.lower()}(&mut self, expr: &Expr) -> Result<R, E>;\n')
         f.write("}\n\n")
 
 
 if __name__ == "__main__":
-    output_file = sys.argv[1]
-    types = [
+    expr_types = [
         "Binary: left Box<Expr>, right Box<Expr>, operator Token",
         "Grouping: expression Box<Expr>",
         "Literal: value String",
         "Unary: operator Token, right Box<Expr>",
+        "Variable: name Token"
     ]
-    define_ast(output_file, "Expr", types)
+    # define_ast("src/expr.rs", "Expr", expr_types)
+
+    stmt_types = [
+            "Expression: expression Expr",
+            "Print: expression Expr",
+            "Var: name Token, initializer Expr"
+            ]    
+    define_ast("src/stmt.rs", "Stmt", stmt_types)
+

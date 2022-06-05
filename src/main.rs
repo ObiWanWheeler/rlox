@@ -1,9 +1,12 @@
 pub mod ast_printer;
 pub mod common;
 pub mod expr;
+pub mod stmt; 
+pub mod environment;
 pub mod lexer;
 pub mod lox;
 pub mod parser;
+pub mod interpreter;
 
 use clap::Parser;
 

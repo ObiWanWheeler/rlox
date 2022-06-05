@@ -3,7 +3,9 @@ use std::vec::IntoIter;
 use crate::{
     common::{Token, TokenType},
     expr::{Expr, LiteralType},
-    lox, token,
+    lox,
+    stmt::Stmt,
+    token,
 };
 
 pub struct Parser {
@@ -19,6 +21,54 @@ impl Parser {
 
     fn consume_token(&mut self) -> Option<Token> {
         self.tokens.next()
+    }
+
+    fn declaration(&mut self) -> Result<Stmt, ParseError> {
+        if self.match_next_token(&[TokenType::Var]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
+        // consume var token
+        self.consume_token();
+        let name = self.require_consume(TokenType::Identifier, "Expected variable name")?;
+        let mut initializer = None;
+        if self.match_next_token(&[TokenType::Equal]) {
+            // consume = token
+            self.consume_token();
+            initializer = Some(self.expression()?);
+        }
+
+        self.require_consume(
+            TokenType::SemiColon,
+            "Expect ';' after variable declaration",
+        )?;
+        Ok(Stmt::Var { name, initializer })
+    }
+
+    fn statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.match_next_token(&[TokenType::Print]) {
+            self.print_statement()
+        } else {
+            self.expression_statement()
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, ParseError> {
+        // consume print token
+        self.consume_token();
+        let value = self.expression()?;
+        self.require_consume(TokenType::SemiColon, "Expect ';' after value")?;
+        Ok(Stmt::Print { expression: value })
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
+        let expression = self.expression()?;
+        self.require_consume(TokenType::SemiColon, "Expect ';' after expression")?;
+        Ok(Stmt::Expression { expression })
     }
 
     fn expression(&mut self) -> Result<Expr, ParseError> {
@@ -138,6 +188,14 @@ impl Parser {
                     expression: Box::new(expr),
                 })
             }
+            Token {
+                token_type: TokenType::Strang,
+                raw,
+                ..
+            } => Ok(Expr::Literal {
+                value: LiteralType::Strang(raw),
+            }),
+            t if t.token_type == TokenType::Identifier => Ok(Expr::Variable { name: t }),
             t => Err(self.error(&t, "Expected expression")),
         }
     }
@@ -153,9 +211,9 @@ impl Parser {
         &mut self,
         required: TokenType,
         error_message: &str,
-    ) -> Result<(), ParseError> {
+    ) -> Result<Token, ParseError> {
         match self.consume_token() {
-            Some(t) if t.token_type == required => Ok(()),
+            Some(t) if t.token_type == required => Ok(t),
             Some(t) => Err(self.error(&t, error_message)),
             None => Err(self.error(&token!(EOF, "", (0, 0)), error_message)),
         }
@@ -163,40 +221,49 @@ impl Parser {
 
     fn error(&self, token: &Token, message: &str) -> ParseError {
         println!(
-            "parser: {} at line {} column {}",
-            message, token.line, token.column
+            "parser: {} caused by {:?}, at line {} column {}",
+            message, token.token_type, token.line, token.column
         );
         lox::report_error();
         ParseError
     }
 
     fn synchronize(&mut self) {
-        while !self.match_next_token(&vec![
-            TokenType::SemiColon,
-            TokenType::Class,
-            TokenType::Funct,
-            TokenType::Var,
-            TokenType::For,
-            TokenType::If,
-            TokenType::While,
-            TokenType::Print,
-            TokenType::Return,
-        ]) {
+        while !self.is_done()
+            && !self.match_next_token(&vec![
+                TokenType::EOF,
+                TokenType::SemiColon,
+                TokenType::Class,
+                TokenType::Funct,
+                TokenType::Var,
+                TokenType::For,
+                TokenType::If,
+                TokenType::While,
+                TokenType::Print,
+                TokenType::Return,
+            ])
+        {
             self.consume_token();
         }
     }
 
-    pub fn parse(&mut self) -> Option<Expr> {
-        match self.expression() {
-            Err(_) => None,
-            Ok(expr) => Some(expr),
+    pub fn is_done(&mut self) -> bool {
+        match self.tokens.peek() {
+            None => true,
+            Some(tok) => tok.token_type == TokenType::EOF,
         }
+    }
+
+    pub fn parse(&mut self) -> Vec<Stmt> {
+        let mut statements = Vec::new();
+        while !self.is_done() {
+            match self.declaration() {
+                Ok(decl) => statements.push(decl),
+                Err(_) => self.synchronize(),
+            }
+        }
+        statements
     }
 }
 
 struct ParseError;
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error")
-    }
-}

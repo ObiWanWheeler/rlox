@@ -1,24 +1,29 @@
+use std::string::ParseError;
+
 use crate::expr::{Expr, Visitor};
 
 pub struct AstPrinter {}
 
-impl Visitor<String> for AstPrinter {
-    fn visit_expr(&mut self, expr: &Expr) -> String {
+impl Visitor<String, ParseError> for AstPrinter {
+    fn visit_expr(&mut self, expr: &Expr) -> Result<String, ParseError> {
         match expr {
             Expr::Binary {
                 left,
                 right,
                 operator,
-            } => format!(
+            } => Ok(format!(
                 "({} {} {})",
                 operator.raw,
-                self.visit_expr(left),
-                self.visit_expr(right)
+                self.visit_expr(left)?,
+                self.visit_expr(right)?)
             ),
-            Expr::Grouping { expression } => format!("(group {})", self.visit_expr(expression)),
-            Expr::Literal { value } => format!("{:?}", value.clone()),
+            Expr::Grouping { expression } => Ok(format!("(group {})", self.visit_expr(expression)?)),
+            Expr::Literal { value } => Ok(format!("{:?}", value.clone())),
             Expr::Unary { operator, right } => {
-                format!("({}{})", operator.raw, self.visit_expr(right))
+                Ok(format!("({}{})", operator.raw, self.visit_expr(right)?))
+            }
+            Expr::Variable { name } => {
+                Ok(name.raw.clone())
             }
         }
     }

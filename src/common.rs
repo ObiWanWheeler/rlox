@@ -43,7 +43,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
 };
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
     // punctuation
     LeftParen,
@@ -95,7 +95,7 @@ pub enum TokenType {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Eq)]
 pub struct Token {
     pub token_type: TokenType,
     pub raw: String,

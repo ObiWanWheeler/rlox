@@ -4,5 +4,6 @@
    wow
 */
 
-var x = 2.64;
-print("hello world");
+1 + 2 == 2.64;
+print "hello world";
+print 69 * 420;

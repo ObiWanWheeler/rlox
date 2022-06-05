@@ -1,10 +1,20 @@
+program -> declaration* EOF ;
+
+declaration -> varDecl | statement ;
+
+statement -> exprStmt | printStmt ;
+varDecl -> "var" IDENTIFIER ("=" expression)? ";" ;
+
+exprStmt -> expression ";" ;
+printStmt -> "print" expression ";" ;
+
 expression -> equality ;
 equality -> comparison ( ( "!=" | "==" ) comparison )\* ;
 comparison -> term (( < | > | <= | >= ) term)\* ;
 term -> factor ( ( "+" | "-" ) term )\* ;
 factor -> unary ( ("/" | "\*") unary )\* ; ;
 unary -> ( "!" | "-" ) unary | primary ;
-primary -> literal | grouping ;
+primary -> literal | grouping | IDENTIFIER ;
 
 literal -> NUMBER | STRING | "true" | "false" | nil ;
 grouping -> "(" expression ")" ;
