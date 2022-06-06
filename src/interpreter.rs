@@ -56,6 +56,35 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
     fn visit_expr(&mut self, expr: &expr::Expr) -> Result<LiteralType, RuntimeException> {
         match expr {
             expr::Expr::Literal { value } => Ok(value.clone()),
+            expr::Expr::Logical {
+                left,
+                operator,
+                right,
+            } => {
+                let left = self.evaluate(left)?;
+
+                match operator.token_type {
+                    TokenType::Or => {
+                        if Interpreter::is_truthy(left) {
+                            return Ok(LiteralType::Bool(true));
+                        }
+                    }
+                    TokenType::And => {
+                        if !Interpreter::is_truthy(left) {
+                            return Ok(LiteralType::Bool(false));
+                        }
+                    }
+                    _ => {
+                        return Err(RuntimeException::report(
+                            operator.clone(),
+                            &format!("invalid operator {} in logical expression", operator.raw),
+                        ))
+                    }
+                };
+
+                self.evaluate(right)
+            }
+
             expr::Expr::Binary {
                 left,
                 right,
@@ -171,7 +200,11 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 self.evaluate(expression)?;
                 Ok(())
             }
-            stmt::Stmt::If { condition, then_branch, else_branch } => {
+            stmt::Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
                 let condition = self.evaluate(condition)?;
                 if Interpreter::is_truthy(condition) {
                     self.execute(then_branch)?;

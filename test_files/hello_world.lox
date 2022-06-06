@@ -23,3 +23,16 @@ if (false)
 else if (true)
   print "true in the second if";
 
+print "hi" or 2; 
+
+var n = nil;
+print n or "nil n";
+
+if (n and true)
+  print "n was truthy";
+else
+  print "n was falsey";
+
+if (true)
+  if (!n)
+    print "nested!";

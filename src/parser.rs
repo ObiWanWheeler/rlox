@@ -52,8 +52,7 @@ impl Parser {
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         if self.match_next_token(&[TokenType::If]) {
             self.if_statement()
-        }
-        else if self.match_next_token(&[TokenType::Print]) {
+        } else if self.match_next_token(&[TokenType::Print]) {
             self.print_statement()
         } else if self.match_next_token(&[TokenType::LeftBrace]) {
             Ok(Stmt::Block {
@@ -77,9 +76,13 @@ impl Parser {
             self.consume_token();
             else_branch = Some(Box::new(self.statement()?));
         }
-        Ok(Stmt::If { condition, then_branch: Box::new(then_branch), else_branch })
+        Ok(Stmt::If {
+            condition,
+            then_branch: Box::new(then_branch),
+            else_branch,
+        })
     }
-        
+
     fn print_statement(&mut self) -> Result<Stmt, ParseError> {
         // consume print token
         self.consume_token();
@@ -114,7 +117,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self.match_next_token(&[TokenType::Equal]) {
             let equals = self.consume_token().unwrap();
@@ -128,6 +131,38 @@ impl Parser {
             }
 
             self.error(&equals, "Invalid assignment target.");
+        }
+
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.and()?;
+
+        while self.match_next_token(&[TokenType::Or]) {
+            let operator = self.consume_token().unwrap();
+            let right = self.and()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.equality()?;
+
+        while self.match_next_token(&[TokenType::And]) {
+            let operator = self.consume_token().unwrap();
+            let right = self.equality()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
         }
 
         Ok(expr)
@@ -227,6 +262,12 @@ impl Parser {
                 ..
             } => Ok(Expr::Literal {
                 value: LiteralType::Bool(true),
+            }),
+            Token {
+                token_type: TokenType::Nil,
+                ..
+            } => Ok(Expr::Literal {
+                value: LiteralType::Nil,
             }),
             Token {
                 token_type: TokenType::Number,
