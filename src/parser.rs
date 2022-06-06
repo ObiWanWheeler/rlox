@@ -1,7 +1,7 @@
 use std::vec::IntoIter;
 
 use crate::{
-    common::{Token, TokenType, LiteralType},
+    common::{LiteralType, Token, TokenType},
     expr::Expr,
     lox,
     stmt::Stmt,
@@ -50,19 +50,57 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        if self.match_next_token(&[TokenType::Print]) {
+        if self.match_next_token(&[TokenType::If]) {
+            self.if_statement()
+        }
+        else if self.match_next_token(&[TokenType::Print]) {
             self.print_statement()
+        } else if self.match_next_token(&[TokenType::LeftBrace]) {
+            Ok(Stmt::Block {
+                statements: self.block()?,
+            })
         } else {
             self.expression_statement()
         }
     }
 
+    fn if_statement(&mut self) -> Result<Stmt, ParseError> {
+        // consume the if token
+        self.consume_token();
+        self.require_consume(TokenType::LeftParen, "Expect '(' to open 'if' condition")?;
+        let condition = self.expression()?;
+        self.require_consume(TokenType::RightParen, "Expect ')' to close 'if' condition")?;
+        let then_branch = self.statement()?;
+        let mut else_branch = None;
+        if self.match_next_token(&[TokenType::Else]) {
+            // consume the else token
+            self.consume_token();
+            else_branch = Some(Box::new(self.statement()?));
+        }
+        Ok(Stmt::If { condition, then_branch: Box::new(then_branch), else_branch })
+    }
+        
     fn print_statement(&mut self) -> Result<Stmt, ParseError> {
         // consume print token
         self.consume_token();
         let value = self.expression()?;
         self.require_consume(TokenType::SemiColon, "Expect ';' after value")?;
         Ok(Stmt::Print { expression: value })
+    }
+
+    fn block(&mut self) -> Result<Vec<Box<Stmt>>, ParseError> {
+        // consume { token
+        self.consume_token();
+
+        let mut statements = vec![];
+
+        while !self.match_next_token(&[TokenType::RightBrace]) && !self.is_done() {
+            statements.push(Box::new(self.declaration()?));
+        }
+
+        // only errors if the self.is_done() causes the loop to terminate, i.e unclosed brace
+        self.require_consume(TokenType::RightBrace, "Expect '{' to close a block")?;
+        Ok(statements)
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -83,7 +121,10 @@ impl Parser {
             let value = self.assignment()?;
 
             if let Expr::Variable { name } = expr {
-                return Ok(Expr::Assign { name, value: Box::new(value) });
+                return Ok(Expr::Assign {
+                    name,
+                    value: Box::new(value),
+                });
             }
 
             self.error(&equals, "Invalid assignment target.");

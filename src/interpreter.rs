@@ -1,8 +1,7 @@
 use crate::{
-    common::{Token, TokenType, LiteralType},
+    common::{LiteralType, Token, TokenType},
     environment::Environment,
-    expr,
-    lox, stmt,
+    expr, lox, stmt,
 };
 
 pub struct Interpreter {
@@ -12,13 +11,26 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            environment: Environment::new(),
+            environment: Environment::new(None),
         }
     }
 
     fn execute(&mut self, stmt: &stmt::Stmt) -> Result<(), RuntimeException> {
         stmt::Visitor::visit_stmt(self, stmt)
     }
+
+    fn execute_block(&mut self, statements: &[Box<stmt::Stmt>]) -> Result<(), RuntimeException> {
+        let prev_env = self.environment.clone();
+        self.environment = Environment::new(Some(Box::new(prev_env.clone())));
+
+        for stmt in statements {
+            self.execute(stmt)?;
+        }
+
+        self.environment = prev_env;
+        Ok(())
+    }
+
     fn evaluate(&mut self, expression: &expr::Expr) -> Result<LiteralType, RuntimeException> {
         expr::Visitor::visit_expr(self, expression)
     }
@@ -159,6 +171,15 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 self.evaluate(expression)?;
                 Ok(())
             }
+            stmt::Stmt::If { condition, then_branch, else_branch } => {
+                let condition = self.evaluate(condition)?;
+                if Interpreter::is_truthy(condition) {
+                    self.execute(then_branch)?;
+                } else if let Some(else_branch) = else_branch {
+                    self.execute(else_branch)?;
+                }
+                Ok(())
+            }
             stmt::Stmt::Print { expression } => {
                 let val = self.evaluate(expression)?;
                 println!("{}", val.to_string());
@@ -171,6 +192,10 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 }
 
                 self.environment.define(name.raw.clone(), val);
+                Ok(())
+            }
+            stmt::Stmt::Block { statements } => {
+                self.execute_block(statements)?;
                 Ok(())
             }
         }

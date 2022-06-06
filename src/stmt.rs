@@ -1,22 +1,31 @@
-use crate::{expr::Expr, common::Token};
+use crate::common::Token;
+use crate::expr::Expr;
 
 pub enum Stmt {
-Expression {
-    expression: Expr,
-},
+    Block {
+        statements: Vec<Box<Stmt>>,
+    },
 
-Print {
-    expression: Expr,
-},
+    Expression {
+        expression: Expr,
+    },
 
-Var {
-    name: Token,
-    initializer: Option<Expr>,
-},
+    If {
+        condition: Expr,
+        then_branch: Box<Stmt>,
+        else_branch: Option<Box<Stmt>>
+    },
 
+    Print {
+        expression: Expr,
+    },
+
+    Var {
+        name: Token,
+        initializer: Option<Expr>,
+    },
 }
 
 pub trait Visitor<R, E> {
-  fn visit_stmt(&mut self, stmt: &Stmt) -> Result<R, E>;
+    fn visit_stmt(&mut self, stmt: &Stmt) -> Result<R, E>;
 }
-

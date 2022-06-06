@@ -21,12 +21,12 @@ def define_ast(output_file, base, types: List[str]):
 
                 f.write(f'    {field_name.strip()}: {type.strip()},\n')
             f.write('},\n\n')
-            f.write("}\n\n")
+        f.write("}\n\n")
         
-            f.write(f'pub trait Visitor<R, E> {{\n')
+        f.write(f'pub trait Visitor<R, E> {{\n')
 
-            f.write(f'  fn visit_{base.lower()}(&mut self, {base.lower()}: &{base}) -> Result<R, E>;\n')
-            f.write("}\n\n")
+        f.write(f'  fn visit_{base.lower()}(&mut self, {base.lower()}: &{base}) -> Result<R, E>;\n')
+        f.write("}\n\n")
 
 
 if __name__ == "__main__":
@@ -38,10 +38,12 @@ if __name__ == "__main__":
         "Unary: operator Token, right Box<Expr>",
         "Variable: name Token"
     ]
-    define_ast("src/expr_new.rs", "Expr", expr_types)
+    #define_ast("src/expr_new.rs", "Expr", expr_types)
 
     stmt_types = [
+            "Block: statements Vec<Box<Stmt>>",
             "Expression: expression Expr",
+            "If: condition Expr, then_branch Box<Stmt>"
             "Print: expression Expr",
             "Var: name Token, initializer Option<Expr>"
             ]    

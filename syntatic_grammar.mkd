@@ -2,11 +2,13 @@ program -> declaration* EOF ;
 
 declaration -> varDecl | statement ;
 
-statement -> exprStmt | printStmt ;
+statement -> exprStmt | ifStmt | printStmt | block ;
 varDecl -> "var" IDENTIFIER ("=" expression)? ";" ;
 
 exprStmt -> expression ";" ;
+ifStmt -> "if" "(" expression ")" statement ( "else" statement )
 printStmt -> "print" expression ";" ;
+block -> "{" declaration* "}" ;
 
 expression -> equality ;
 equality -> comparison ( ( "!=" | "==" ) comparison )\* ;

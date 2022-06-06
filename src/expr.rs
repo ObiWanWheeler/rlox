@@ -1,5 +1,6 @@
-use crate::common::{Token, LiteralType};
+use crate::common::{LiteralType, Token};
 
+#[derive(Debug)]
 pub enum Expr {
     Assign {
         name: Token,
