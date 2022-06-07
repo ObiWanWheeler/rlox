@@ -2,11 +2,12 @@ program -> declaration* EOF ;
 
 declaration -> varDecl | statement ;
 
-statement -> exprStmt | ifStmt | printStmt | block ;
+statement -> exprStmt | ifStmt | whileStmt | printStmt | block ;
 varDecl -> "var" IDENTIFIER ("=" expression)? ";" ;
 
 exprStmt -> expression ";" ;
-ifStmt -> "if" "(" expression ")" statement ( "else" statement )
+ifStmt -> "if" "(" expression ")" statement ( "else" statement )?
+whileStmt -> "while" "(" expression ")" statement ( "finally" statement )?
 printStmt -> "print" expression ";" ;
 block -> "{" declaration* "}" ;
 

@@ -4,7 +4,6 @@
    wow
 */
 
-1 + 2 == 2.64;
 print "hello world";
 print 69 * 420;
 
@@ -34,5 +33,19 @@ else
   print "n was falsey";
 
 if (true)
-  if (!n)
-    print "nested!";
+  if (!n) { 
+    var c = 5;
+    print "c = " + c + " in nest";
+}
+
+var count = 1;
+count = count + 1;
+while (count <= 10)  
+  count = count + 1;
+finally
+  print "loop done! count = " + count;  
+  
+for (var i = 0; i < 10; i = i + 1) {
+  print i;
+}
+// print c; error

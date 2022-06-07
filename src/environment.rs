@@ -8,7 +8,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
-    parent: Option<Box<Environment>>,
+    pub parent: Option<Box<Environment>>,
 }
 
 impl Environment {

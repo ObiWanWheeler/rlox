@@ -20,14 +20,13 @@ impl Interpreter {
     }
 
     fn execute_block(&mut self, statements: &[Box<stmt::Stmt>]) -> Result<(), RuntimeException> {
-        let prev_env = self.environment.clone();
-        self.environment = Environment::new(Some(Box::new(prev_env.clone())));
+        self.environment = Environment::new(Some(Box::new(self.environment.clone())));
 
         for stmt in statements {
             self.execute(stmt)?;
         }
 
-        self.environment = prev_env;
+        self.environment = *self.environment.parent.clone().unwrap(); 
         Ok(())
     }
 
@@ -210,6 +209,15 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                     self.execute(then_branch)?;
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?;
+                }
+                Ok(())
+            }
+            stmt::Stmt::While { condition, then_branch, finally_branch } => {
+                while Interpreter::is_truthy(self.evaluate(condition)?) {
+                    self.execute(then_branch)?;
+                }
+                if let Some(finally_branch) = finally_branch {
+                    self.execute(finally_branch)?;
                 }
                 Ok(())
             }

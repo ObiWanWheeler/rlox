@@ -39,14 +39,15 @@ if __name__ == "__main__":
         "Unary: operator Token, right Box<Expr>",
         "Variable: name Token"
     ]
-    define_ast("src/expr_new.rs", "Expr", expr_types)
+    #define_ast("src/expr_new.rs", "Expr", expr_types)
 
     stmt_types = [
             "Block: statements Vec<Box<Stmt>>",
             "Expression: expression Expr",
-            "If: condition Expr, then_branch Box<Stmt>, else_branch Option<Box<Stmt>>"
+            "If: condition Expr, then_branch Box<Stmt>, else_branch Option<Box<Stmt>>",
+            "While: condition Expr, then_branch Box<Stmt>, finally_branch Option<Box<Stmt>>",
             "Print: expression Expr",
             "Var: name Token, initializer Option<Expr>"
             ]    
-    #define_ast("src/stmt_new.rs", "Stmt", stmt_types)
+    define_ast("src/stmt_new.rs", "Stmt", stmt_types)
 

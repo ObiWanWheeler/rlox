@@ -13,7 +13,13 @@ pub enum Stmt {
     If {
         condition: Expr,
         then_branch: Box<Stmt>,
-        else_branch: Option<Box<Stmt>>
+        else_branch: Option<Box<Stmt>>,
+    },
+
+    While {
+        condition: Expr,
+        then_branch: Box<Stmt>,
+        finally_branch: Option<Box<Stmt>>
     },
 
     Print {

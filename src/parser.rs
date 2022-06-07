@@ -52,6 +52,10 @@ impl Parser {
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         if self.match_next_token(&[TokenType::If]) {
             self.if_statement()
+        } else if self.match_next_token(&[TokenType::While]) {
+            self.while_statement()
+        } else if self.match_next_token(&[TokenType::For]) {
+            self.for_statement()
         } else if self.match_next_token(&[TokenType::Print]) {
             self.print_statement()
         } else if self.match_next_token(&[TokenType::LeftBrace]) {
@@ -69,7 +73,7 @@ impl Parser {
         self.require_consume(TokenType::LeftParen, "Expect '(' to open 'if' condition")?;
         let condition = self.expression()?;
         self.require_consume(TokenType::RightParen, "Expect ')' to close 'if' condition")?;
-        let then_branch = self.statement()?;
+        let then_branch = Box::new(self.statement()?);
         let mut else_branch = None;
         if self.match_next_token(&[TokenType::Else]) {
             // consume the else token
@@ -78,9 +82,69 @@ impl Parser {
         }
         Ok(Stmt::If {
             condition,
-            then_branch: Box::new(then_branch),
+            then_branch,
             else_branch,
         })
+    }
+
+    fn while_statement(&mut self) -> Result<Stmt, ParseError> {
+        // consume the while token
+        self.consume_token();
+        self.require_consume(TokenType::LeftParen, "Expect '(' to open 'while' condition")?;
+        let condition = self.expression()?;
+        self.require_consume(TokenType::RightParen, "Expect ')' to close 'while' condition")?;
+        let then_branch = Box::new(self.statement()?);
+        let mut finally_branch = None;
+        if self.match_next_token(&[TokenType::Finally]) {
+            // consume the finally token
+            self.consume_token();
+            finally_branch = Some(Box::new(self.statement()?));
+        }
+        Ok(Stmt::While { condition, then_branch, finally_branch })
+    }
+    
+    fn for_statement(&mut self) -> Result<Stmt, ParseError> {
+        // consume the for token 
+        self.consume_token();
+        self.require_consume(TokenType::LeftParen, "Expect '(' to open 'for' clause")?;
+        
+        let initializer;
+        if self.match_next_token(&[TokenType::SemiColon]) {
+            initializer = None;
+        } else if self.match_next_token(&[TokenType::Var]) {
+           initializer = Some(self.var_declaration()?); 
+        } else {
+            initializer = Some(self.expression_statement()?);
+        }
+
+        let mut condition = None;
+        if !self.match_next_token(&[TokenType::SemiColon]) {
+            condition = Some(self.expression()?);
+        }
+        self.require_consume(TokenType::SemiColon, "Expect ';' after 'for' loop condition")?;
+        
+        let mut increment = None;
+        if !self.match_next_token(&[TokenType::RightParen]) {
+            increment = Some(self.expression()?);
+        }
+        
+        self.require_consume(TokenType::RightParen, "Expect ')' to close 'for' clause")?;
+
+        let mut body = self.statement()?;
+
+        if increment.is_some() {
+            body = Stmt::Block { statements: vec![Box::new(body), Box::new(Stmt::Expression { expression: increment.unwrap() })] };
+        } 
+
+        if condition.is_some() {
+            body = Stmt::While { condition: condition.unwrap(), then_branch: Box::new(body), finally_branch: None };
+        }
+
+        if initializer.is_some() {
+            body = Stmt::Block { statements: vec![Box::new(initializer.unwrap()), Box::new(body)] };
+        }
+
+        Ok(body)
     }
 
     fn print_statement(&mut self) -> Result<Stmt, ParseError> {
