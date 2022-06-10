@@ -1,17 +1,24 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
-    common::{LiteralType, Token, TokenType},
+    common::{LoxType, Token, TokenType, LoxFunction},
     environment::Environment,
-    expr, lox, stmt,
+    expr, lox, stmt, native_functions::Clock,
 };
 
 pub struct Interpreter {
-    environment: Environment,
+    globals: Rc<RefCell<Environment>>,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let globals = Rc::new(RefCell::new(Environment::new(None)));
+        globals.borrow_mut().define("clock".to_string(), LoxType::Function(Rc::new(Clock)));
+
         Self {
-            environment: Environment::new(None),
+            globals: Rc::clone(&globals),
+            environment: globals,
         }
     }
 
@@ -19,27 +26,32 @@ impl Interpreter {
         stmt::Visitor::visit_stmt(self, stmt)
     }
 
-    fn execute_block(&mut self, statements: &[Box<stmt::Stmt>]) -> Result<(), RuntimeException> {
-        self.environment = Environment::new(Some(Box::new(self.environment.clone())));
+    pub fn execute_block(&mut self, statements: &[stmt::Stmt], environment: Rc<RefCell<Environment>>) -> Result<(), RuntimeException> {
+        let prev = Rc::clone(&self.environment);
+        self.environment = environment;
 
         for stmt in statements {
             self.execute(stmt)?;
         }
 
-        self.environment = *self.environment.parent.clone().unwrap(); 
+        self.environment = prev;
         Ok(())
     }
 
-    fn evaluate(&mut self, expression: &expr::Expr) -> Result<LiteralType, RuntimeException> {
+    fn evaluate(&mut self, expression: &expr::Expr) -> Result<LoxType, RuntimeException> {
         expr::Visitor::visit_expr(self, expression)
     }
 
-    fn is_truthy(object: LiteralType) -> bool {
+    fn is_truthy(object: LoxType) -> bool {
         match object {
-            LiteralType::Nil => false,
-            LiteralType::Bool(value) => value,
+            LoxType::Nil => false,
+            LoxType::Bool(value) => value,
             _ => true,
         }
+    }
+
+    pub fn globals(&self) -> Rc<RefCell<Environment>> {
+        Rc::clone(&self.globals)
     }
 
     pub fn interpret(&mut self, statements: &[stmt::Stmt]) {
@@ -51,8 +63,8 @@ impl Interpreter {
     }
 }
 
-impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
-    fn visit_expr(&mut self, expr: &expr::Expr) -> Result<LiteralType, RuntimeException> {
+impl expr::Visitor<LoxType, RuntimeException> for Interpreter {
+    fn visit_expr(&mut self, expr: &expr::Expr) -> Result<LoxType, RuntimeException> {
         match expr {
             expr::Expr::Literal { value } => Ok(value.clone()),
             expr::Expr::Logical {
@@ -65,12 +77,12 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                 match operator.token_type {
                     TokenType::Or => {
                         if Interpreter::is_truthy(left) {
-                            return Ok(LiteralType::Bool(true));
+                            return Ok(LoxType::Bool(true));
                         }
                     }
                     TokenType::And => {
                         if !Interpreter::is_truthy(left) {
-                            return Ok(LiteralType::Bool(false));
+                            return Ok(LoxType::Bool(false));
                         }
                     }
                     _ => {
@@ -95,14 +107,14 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                 // TODO factor out Errs into function
                 match operator.token_type {
                     TokenType::Plus => match (left, right) {
-                        (LiteralType::Number(left), LiteralType::Number(right)) => {
-                            Ok(LiteralType::Number(left + right))
+                        (LoxType::Number(left), LoxType::Number(right)) => {
+                            Ok(LoxType::Number(left + right))
                         }
-                        (LiteralType::Strang(left), right) => {
-                            Ok(LiteralType::Strang(left + &right.to_string()))
+                        (LoxType::Strang(left), right) => {
+                            Ok(LoxType::Strang(left + &right.to_string()))
                         }
-                        (left, LiteralType::Strang(right)) => {
-                            Ok(LiteralType::Strang(left.to_string() + &right))
+                        (left, LoxType::Strang(right)) => {
+                            Ok(LoxType::Strang(left.to_string() + &right))
                         }
                         (left, right) => Err(RuntimeException::report(
                             operator.clone(),
@@ -110,8 +122,8 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                         )),
                     },
                     TokenType::Minus => match (left, right) {
-                        (LiteralType::Number(left), LiteralType::Number(right)) => {
-                            Ok(LiteralType::Number(left - right))
+                        (LoxType::Number(left), LoxType::Number(right)) => {
+                            Ok(LoxType::Number(left - right))
                         }
                         (left, right) => Err(RuntimeException::report(
                             operator.clone(),
@@ -119,7 +131,7 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                         )),
                     },
                     TokenType::Slash => match (left, right) {
-                        (LiteralType::Number(left), LiteralType::Number(right)) => {
+                        (LoxType::Number(left), LoxType::Number(right)) => {
                             if right == 0f32 {
                                 // divide by 0 error
                                 return Err(RuntimeException::report(
@@ -127,7 +139,7 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                                     &format!("cannot divide by 0 in {:?} / {:?}", left, 0f32),
                                 ));
                             }
-                            Ok(LiteralType::Number(left / right))
+                            Ok(LoxType::Number(left / right))
                         }
                         (left, right) => Err(RuntimeException::report(
                             operator.clone(),
@@ -135,20 +147,20 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                         )),
                     },
                     TokenType::Star => match (left, right) {
-                        (LiteralType::Number(left), LiteralType::Number(right)) => {
-                            Ok(LiteralType::Number(left * right))
+                        (LoxType::Number(left), LoxType::Number(right)) => {
+                            Ok(LoxType::Number(left * right))
                         }
                         (left, right) => Err(RuntimeException::report(
                             operator.clone(),
                             &format!("invalid operands {:?}, {:?} for * ", left, right),
                         )),
                     },
-                    TokenType::Greater => Ok(LiteralType::Bool(left > right)),
-                    TokenType::GreaterEqual => Ok(LiteralType::Bool(left >= right)),
-                    TokenType::Less => Ok(LiteralType::Bool(left < right)),
-                    TokenType::LessEqual => Ok(LiteralType::Bool(left <= right)),
-                    TokenType::BangEqual => Ok(LiteralType::Bool(!(left == right))),
-                    TokenType::EqualEqual => Ok(LiteralType::Bool(left == right)),
+                    TokenType::Greater => Ok(LoxType::Bool(left > right)),
+                    TokenType::GreaterEqual => Ok(LoxType::Bool(left >= right)),
+                    TokenType::Less => Ok(LoxType::Bool(left < right)),
+                    TokenType::LessEqual => Ok(LoxType::Bool(left <= right)),
+                    TokenType::BangEqual => Ok(LoxType::Bool(!(left == right))),
+                    TokenType::EqualEqual => Ok(LoxType::Bool(left == right)),
                     _ => Err(RuntimeException::report(
                         operator.clone(),
                         &format!("Invalid binary operand {:?}", operator),
@@ -161,7 +173,7 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
 
                 match operator.token_type {
                     TokenType::Minus => match right {
-                        LiteralType::Number(value) => Ok(LiteralType::Number(-value)),
+                        LoxType::Number(value) => Ok(LoxType::Number(-value)),
                         _ => Err(RuntimeException::report(
                             operator.clone(),
                             &format!(
@@ -171,7 +183,7 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                         )),
                     },
                     TokenType::Bang => {
-                        return Ok(LiteralType::Bool(!Interpreter::is_truthy(right)));
+                        return Ok(LoxType::Bool(!Interpreter::is_truthy(right)));
                     }
                     _ => Err(RuntimeException::report(
                         operator.clone(),
@@ -182,10 +194,47 @@ impl expr::Visitor<LiteralType, RuntimeException> for Interpreter {
                     )),
                 }
             }
-            expr::Expr::Variable { name } => self.environment.get(name),
+            expr::Expr::Call {
+                callee,
+                paren,
+                arguments,
+            } => {
+                let callee = self.evaluate(callee)?;
+
+                let mut args = vec![];
+                for arg in arguments.iter() {
+                    args.push(self.evaluate(arg)?);
+                }
+
+                match callee {
+                    LoxType::Function(f) => {
+                        if arguments.len() != f.arity() {
+                            Err(RuntimeException::report(
+                                paren.clone(),
+                                &format!(
+                                    "Expected {} arguments, found {} in {:?}",
+                                    f.arity(),
+                                    arguments.len(),
+                                    arguments
+                                ),
+                            ))
+                        } else {
+                            f.call(self, args)
+                        }
+                    }
+                    _ => Err(RuntimeException::report(
+                        paren.clone(),
+                        &format!(
+                            "Unable to call {:?}. Only functions and classes may be called",
+                            callee
+                        ),
+                    )),
+                }
+            }
+            expr::Expr::Variable { name } => self.environment.borrow().get(name),
             expr::Expr::Assign { name, value } => {
                 let value = self.evaluate(value)?;
-                self.environment.assign(name, value.clone())?;
+                self.environment.borrow_mut().assign(name, value.clone())?;
                 Ok(value)
             }
         }
@@ -212,7 +261,11 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 }
                 Ok(())
             }
-            stmt::Stmt::While { condition, then_branch, finally_branch } => {
+            stmt::Stmt::While {
+                condition,
+                then_branch,
+                finally_branch,
+            } => {
                 while Interpreter::is_truthy(self.evaluate(condition)?) {
                     self.execute(then_branch)?;
                 }
@@ -227,16 +280,22 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 Ok(())
             }
             stmt::Stmt::Var { name, initializer } => {
-                let mut val = LiteralType::Nil;
+                let mut val = LoxType::Nil;
                 if let Some(init) = initializer {
                     val = self.evaluate(init)?;
                 }
 
-                self.environment.define(name.raw.clone(), val);
+                self.environment.borrow_mut().define(name.raw.clone(), val);
                 Ok(())
             }
+            stmt::Stmt::Function { name, parameters, body } => {
+               let function = LoxFunction::new(name.clone(), parameters.to_vec(), body.to_vec());
+               self.environment.borrow_mut().define(name.raw.clone(), LoxType::Function(Rc::new(function)));
+               Ok(())
+            }
             stmt::Stmt::Block { statements } => {
-                self.execute_block(statements)?;
+                let block_env = Environment::new(Some(Rc::clone(&self.environment)));
+                self.execute_block(&statements, Rc::new(RefCell::new(block_env)))?;
                 Ok(())
             }
         }

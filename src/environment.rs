@@ -1,33 +1,33 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, cell::RefCell, rc::Rc};
 
 use crate::{
-    common::{LiteralType, Token},
+    common::{LoxType, Token},
     interpreter::RuntimeException,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Environment {
-    values: HashMap<String, LiteralType>,
-    pub parent: Option<Box<Environment>>,
+    values: HashMap<String, LoxType>,
+    pub parent: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
-    pub fn new(parent: Option<Box<Environment>>) -> Self {
+    pub fn new(parent: Option<Rc<RefCell<Environment>>>) -> Self {
         Self {
             values: HashMap::new(),
             parent,
         }
     }
 
-    pub fn define(&mut self, name: String, value: LiteralType) {
+    pub fn define(&mut self, name: String, value: LoxType) {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: &Token) -> Result<LiteralType, RuntimeException> {
+    pub fn get(&self, name: &Token) -> Result<LoxType, RuntimeException> {
         if let Some(val) = self.values.get(&name.raw) {
             Ok(val.clone())
         } else if let Some(ref parent) = self.parent {
-            parent.get(name)
+            parent.borrow().get(name)
         } else {
             Err(RuntimeException::report(
                 name.clone(),
@@ -36,12 +36,12 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, name: &Token, value: LiteralType) -> Result<(), RuntimeException> {
+    pub fn assign(&mut self, name: &Token, value: LoxType) -> Result<(), RuntimeException> {
         if self.values.contains_key(&name.raw) {
             self.values.insert(name.raw.clone(), value);
             return Ok(());
         } else if let Some(ref mut parent) = self.parent {
-            parent.assign(name, value)?;
+            parent.borrow_mut().assign(name, value)?;
             return Ok(());
         } else {
             Err(RuntimeException::report(

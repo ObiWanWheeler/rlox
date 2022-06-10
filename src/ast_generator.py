@@ -33,6 +33,7 @@ if __name__ == "__main__":
     expr_types = [
         "Assign: name Token, value Box<Expr>",
         "Binary: left Box<Expr>, right Box<Expr>, operator Token",
+        "Call: callee Box<Expr>, paren Token, arguments Vec<Box<Expr>>",
         "Grouping: expression Box<Expr>",
         "Literal: value LiteralType",
         "Logical: left Box<Expr>, operator Token, right Box<Expr>"
@@ -47,7 +48,8 @@ if __name__ == "__main__":
             "If: condition Expr, then_branch Box<Stmt>, else_branch Option<Box<Stmt>>",
             "While: condition Expr, then_branch Box<Stmt>, finally_branch Option<Box<Stmt>>",
             "Print: expression Expr",
-            "Var: name Token, initializer Option<Expr>"
+            "Var: name Token, initializer Option<Expr>",
+            "Function: name Token, parameters: Vec<Token>, body Vec<Box<Stmt>>",
             ]    
     define_ast("src/stmt_new.rs", "Stmt", stmt_types)
 

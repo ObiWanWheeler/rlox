@@ -1,7 +1,7 @@
 use std::vec::IntoIter;
 
 use crate::{
-    common::{LiteralType, Token, TokenType},
+    common::{LoxType, Token, TokenType, LOX_MAX_ARGUMENT_COUNT},
     expr::Expr,
     lox,
     stmt::Stmt,
@@ -26,6 +26,8 @@ impl Parser {
     fn declaration(&mut self) -> Result<Stmt, ParseError> {
         if self.match_next_token(&[TokenType::Var]) {
             self.var_declaration()
+        } else if self.match_next_token(&[TokenType::Funct]) {
+            self.function_declaration()
         } else {
             self.statement()
         }
@@ -47,6 +49,42 @@ impl Parser {
             "Expect ';' after variable declaration",
         )?;
         Ok(Stmt::Var { name, initializer })
+    }
+
+    fn function_declaration(&mut self) -> Result<Stmt, ParseError> {
+        // consume funct token
+        self.consume_token();
+        let name = self.require_consume(
+            TokenType::Identifier,
+            "Expect 'funct' keyword be followed by function name",
+        )?;
+        println!("{:?}", name);
+        self.require_consume(TokenType::LeftParen, "Expect '(' after function name")?;
+
+        let mut parameters = vec![];
+        while !self.match_next_token(&[TokenType::RightParen, TokenType::EOF]) {
+            // still have args
+            parameters.push(self.consume_token().unwrap());
+            if parameters.len() > LOX_MAX_ARGUMENT_COUNT {
+                let next_tok = self.consume_token().unwrap();
+                self.error(&next_tok, "Exceeded max parameter count");
+            }
+            if self.match_next_token(&[TokenType::RightParen]) {
+                break;
+            }
+            self.require_consume(TokenType::Comma, "Expect parameters are comma seperated")?;
+        }
+
+        self.require_consume(
+            TokenType::RightParen,
+            "Expect function parameter list to be closed with ')'",
+        )?;
+
+        Ok(Stmt::Function {
+            name,
+            parameters,
+            body: self.block()?,
+        })
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
@@ -92,7 +130,10 @@ impl Parser {
         self.consume_token();
         self.require_consume(TokenType::LeftParen, "Expect '(' to open 'while' condition")?;
         let condition = self.expression()?;
-        self.require_consume(TokenType::RightParen, "Expect ')' to close 'while' condition")?;
+        self.require_consume(
+            TokenType::RightParen,
+            "Expect ')' to close 'while' condition",
+        )?;
         let then_branch = Box::new(self.statement()?);
         let mut finally_branch = None;
         if self.match_next_token(&[TokenType::Finally]) {
@@ -100,19 +141,23 @@ impl Parser {
             self.consume_token();
             finally_branch = Some(Box::new(self.statement()?));
         }
-        Ok(Stmt::While { condition, then_branch, finally_branch })
+        Ok(Stmt::While {
+            condition,
+            then_branch,
+            finally_branch,
+        })
     }
-    
+
     fn for_statement(&mut self) -> Result<Stmt, ParseError> {
-        // consume the for token 
+        // consume the for token
         self.consume_token();
         self.require_consume(TokenType::LeftParen, "Expect '(' to open 'for' clause")?;
-        
+
         let initializer;
         if self.match_next_token(&[TokenType::SemiColon]) {
             initializer = None;
         } else if self.match_next_token(&[TokenType::Var]) {
-           initializer = Some(self.var_declaration()?); 
+            initializer = Some(self.var_declaration()?);
         } else {
             initializer = Some(self.expression_statement()?);
         }
@@ -121,27 +166,43 @@ impl Parser {
         if !self.match_next_token(&[TokenType::SemiColon]) {
             condition = Some(self.expression()?);
         }
-        self.require_consume(TokenType::SemiColon, "Expect ';' after 'for' loop condition")?;
-        
+        self.require_consume(
+            TokenType::SemiColon,
+            "Expect ';' after 'for' loop condition",
+        )?;
+
         let mut increment = None;
         if !self.match_next_token(&[TokenType::RightParen]) {
             increment = Some(self.expression()?);
         }
-        
+
         self.require_consume(TokenType::RightParen, "Expect ')' to close 'for' clause")?;
 
         let mut body = self.statement()?;
 
         if increment.is_some() {
-            body = Stmt::Block { statements: vec![Box::new(body), Box::new(Stmt::Expression { expression: increment.unwrap() })] };
-        } 
+            body = Stmt::Block {
+                statements: Box::new(vec![
+                    body,
+                    Stmt::Expression {
+                        expression: increment.unwrap(),
+                    },
+                ]),
+            };
+        }
 
         if condition.is_some() {
-            body = Stmt::While { condition: condition.unwrap(), then_branch: Box::new(body), finally_branch: None };
+            body = Stmt::While {
+                condition: condition.unwrap(),
+                then_branch: Box::new(body),
+                finally_branch: None,
+            };
         }
 
         if initializer.is_some() {
-            body = Stmt::Block { statements: vec![Box::new(initializer.unwrap()), Box::new(body)] };
+            body = Stmt::Block {
+                statements: Box::new(vec![initializer.unwrap(), body]),
+            };
         }
 
         Ok(body)
@@ -155,19 +216,19 @@ impl Parser {
         Ok(Stmt::Print { expression: value })
     }
 
-    fn block(&mut self) -> Result<Vec<Box<Stmt>>, ParseError> {
+    fn block(&mut self) -> Result<Box<Vec<Stmt>>, ParseError> {
         // consume { token
         self.consume_token();
 
         let mut statements = vec![];
 
         while !self.match_next_token(&[TokenType::RightBrace]) && !self.is_done() {
-            statements.push(Box::new(self.declaration()?));
+            statements.push(self.declaration()?);
         }
 
         // only errors if the self.is_done() causes the loop to terminate, i.e unclosed brace
-        self.require_consume(TokenType::RightBrace, "Expect '{' to close a block")?;
-        Ok(statements)
+        self.require_consume(TokenType::RightBrace, "Expect '}' to close a block")?;
+        Ok(Box::new(statements))
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -235,7 +296,7 @@ impl Parser {
     fn equality(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.comparison()?;
 
-        while self.match_next_token(&vec![TokenType::BangEqual, TokenType::EqualEqual]) {
+        while self.match_next_token(&[TokenType::BangEqual, TokenType::EqualEqual]) {
             let operator = self.consume_token().unwrap();
             let right = self.comparison()?;
             expr = Expr::Binary {
@@ -251,7 +312,7 @@ impl Parser {
     fn comparison(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.term()?;
 
-        while self.match_next_token(&vec![
+        while self.match_next_token(&[
             TokenType::Greater,
             TokenType::GreaterEqual,
             TokenType::Less,
@@ -272,7 +333,7 @@ impl Parser {
     fn term(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.factor()?;
 
-        while self.match_next_token(&vec![TokenType::Minus, TokenType::Plus]) {
+        while self.match_next_token(&[TokenType::Minus, TokenType::Plus]) {
             let operator = self.consume_token().unwrap();
             let right = self.factor()?;
             expr = Expr::Binary {
@@ -288,7 +349,7 @@ impl Parser {
     fn factor(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.unary()?;
 
-        while self.match_next_token(&vec![TokenType::Slash, TokenType::Star]) {
+        while self.match_next_token(&[TokenType::Slash, TokenType::Star]) {
             let operator = self.consume_token().unwrap();
             let right = self.unary()?;
             expr = Expr::Binary {
@@ -302,14 +363,43 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {
-        if self.match_next_token(&vec![TokenType::Bang, TokenType::Minus]) {
+        if self.match_next_token(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.consume_token().unwrap();
             Ok(Expr::Unary {
                 operator,
                 right: Box::new(self.unary()?),
             })
         } else {
-            self.primary()
+            self.call()
+        }
+    }
+
+    fn call(&mut self) -> Result<Expr, ParseError> {
+        let expr = self.primary()?;
+        if self.match_next_token(&[TokenType::LeftParen]) {
+            // consume left paren
+            let left_paren = self.consume_token().unwrap();
+            // it's a function call
+            let mut arguments = vec![];
+            while !self.match_next_token(&[TokenType::RightParen]) {
+                // still have args
+                arguments.push(self.expression()?);
+                if arguments.len() > LOX_MAX_ARGUMENT_COUNT {
+                    self.error(&left_paren, "Exceeded max argument count");
+                }
+                if self.match_next_token(&[TokenType::RightParen]) {
+                    break;
+                }
+                self.require_consume(TokenType::Comma, "Expect arguments are comma seperated")?;
+            }
+            return Ok(Expr::Call {
+                callee: Box::new(expr),
+                paren: self
+                    .require_consume(TokenType::RightParen, "Expect ')' closing function call")?,
+                arguments: Box::new(arguments),
+            });
+        } else {
+            return Ok(expr);
         }
     }
 
@@ -319,26 +409,26 @@ impl Parser {
                 token_type: TokenType::False,
                 ..
             } => Ok(Expr::Literal {
-                value: LiteralType::Bool(false),
+                value: LoxType::Bool(false),
             }),
             Token {
                 token_type: TokenType::True,
                 ..
             } => Ok(Expr::Literal {
-                value: LiteralType::Bool(true),
+                value: LoxType::Bool(true),
             }),
             Token {
                 token_type: TokenType::Nil,
                 ..
             } => Ok(Expr::Literal {
-                value: LiteralType::Nil,
+                value: LoxType::Nil,
             }),
             Token {
                 token_type: TokenType::Number,
                 raw,
                 ..
             } => Ok(Expr::Literal {
-                value: LiteralType::Number(raw.parse::<f32>().unwrap()),
+                value: LoxType::Number(raw.parse::<f32>().unwrap()),
             }),
             Token {
                 token_type: TokenType::LeftParen,
@@ -356,7 +446,7 @@ impl Parser {
                 raw,
                 ..
             } => Ok(Expr::Literal {
-                value: LiteralType::Strang(raw),
+                value: LoxType::Strang(raw),
             }),
             t if t.token_type == TokenType::Identifier => Ok(Expr::Variable { name: t }),
             t => Err(self.error(&t, "Expected expression")),

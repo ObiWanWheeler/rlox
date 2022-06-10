@@ -1,4 +1,4 @@
-use crate::{common::*, lexer_error, lox, token};
+use crate::{common::{*, self}, lexer_error, lox, token};
 use thiserror::Error;
 
 pub struct Lexer<'a> {
@@ -125,7 +125,7 @@ impl<'a> Lexer<'a> {
                         }
                     }
                 }
-                Some(c) if c.is_whitespace() || *c == ';' || *c == ')' => break,
+                Some(c) if c.is_whitespace() || common::is_punctuation(c) => break,
                 Some(c) if c.is_ascii_alphabetic() => {
                     let kind = LexerErrorKind::InvalidNumberLiteral {
                         literal: buf,
@@ -152,7 +152,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.source.peek() {
                 None => break,
-                Some(c) if c.is_ascii_alphanumeric() => buf.push(self.consume_char().unwrap()),
+                Some(c) if c.is_ascii_alphanumeric() || *c == '_' => buf.push(self.consume_char().unwrap()),
                 Some(_) => break,
             }
         }

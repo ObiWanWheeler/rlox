@@ -1,9 +1,10 @@
 use crate::common::Token;
 use crate::expr::Expr;
 
+#[derive(Clone)]
 pub enum Stmt {
     Block {
-        statements: Vec<Box<Stmt>>,
+        statements: Box<Vec<Stmt>>,
     },
 
     Expression {
@@ -30,6 +31,12 @@ pub enum Stmt {
         name: Token,
         initializer: Option<Expr>,
     },
+
+    Function {
+        name: Token,
+        parameters: Vec<Token>,
+        body: Box<Vec<Stmt>>,
+    }
 }
 
 pub trait Visitor<R, E> {
