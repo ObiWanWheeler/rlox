@@ -1,6 +1,6 @@
-use crate::common::{LiteralType, Token};
+use crate::common::{LoxType, Token};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Assign {
         name: Token,
@@ -13,12 +13,18 @@ pub enum Expr {
         operator: Token,
     },
 
+    Call {
+        callee: Box<Expr>,
+        paren: Token,
+        arguments: Box<Vec<Expr>>
+    },
+
     Grouping {
         expression: Box<Expr>,
     },
 
     Literal {
-        value: LiteralType,
+        value: LoxType,
     },
 
     Logical {

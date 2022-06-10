@@ -1,9 +1,10 @@
 program -> declaration* EOF ;
 
-declaration -> varDecl | statement ;
+declaration -> varDecl | functionDecl | statement ;
 
 statement -> exprStmt | ifStmt | whileStmt | printStmt | block ;
 varDecl -> "var" IDENTIFIER ("=" expression)? ";" ;
+functionDecl -> "funct" IDENTIFIER "(" parameters? ")" block ;  
 
 exprStmt -> expression ";" ;
 ifStmt -> "if" "(" expression ")" statement ( "else" statement )?
@@ -21,9 +22,12 @@ comparison -> term (( < | > | <= | >= ) term)\* ;
 term -> factor ( ( "+" | "-" ) term )\* ;
 factor -> unary ( ("/" | "\*") unary )\* ; ;
 unary -> ( "!" | "-" ) unary | primary ;
+call -> primary ( "(" arguments? ")" )* ;
 primary -> literal | grouping | IDENTIFIER ;
 
 literal -> NUMBER | STRING | "true" | "false" | nil ;
 grouping -> "(" expression ")" ;
 binary -> expression operator expression ;
 operator -> "\*" | "/" | "%" | "+" | "-" | "==" | "!=" | "<" | ">" | "<=" | ">=" ;
+arguments -> expression ( "," expression )* ; 
+parameters -> IDENTIFIER ( "," IDENTIFIER )* ;

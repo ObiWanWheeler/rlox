@@ -38,6 +38,7 @@ impl Visitor<String, ParseError> for AstPrinter {
             Expr::Assign { name, value } => {
                 Ok(format!("{} = {}", name.raw, self.visit_expr(value)?))
             }
+            _ => Ok(format!("haven't bothered to implement this pp yet"))
         }
     }
 }
