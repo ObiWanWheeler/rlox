@@ -267,13 +267,18 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 finally_branch,
             } => {
                 while Interpreter::is_truthy(self.evaluate(condition)?) {
-                    self.execute(then_branch)?;
+                    if let Err(err) = self.execute(then_branch) {
+                        if err.token.token_type == TokenType::Break {
+                            break;
+                        }
+                    }
                 }
                 if let Some(finally_branch) = finally_branch {
                     self.execute(finally_branch)?;
                 }
                 Ok(())
             }
+            stmt::Stmt::Break { token } => Err(RuntimeException { token: token.clone(), message: "break".to_string(), value: None}),
             stmt::Stmt::Print { expression } => {
                 let val = self.evaluate(expression)?;
                 println!("{}", val.to_string());
@@ -293,6 +298,16 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                self.environment.borrow_mut().define(name.raw.clone(), LoxType::Function(Rc::new(function)));
                Ok(())
             }
+            stmt::Stmt::Return { token, return_value } => {
+                let rv: LoxType;
+                if let Some(val) = return_value {
+                    rv = self.evaluate(val)?;
+                }
+                else {
+                    rv = LoxType::Nil;
+                }
+                Err(RuntimeException { token: token.clone(), message: "return".to_string(), value: Some(rv) })
+            }
             stmt::Stmt::Block { statements } => {
                 let block_env = Environment::new(Some(Rc::clone(&self.environment)));
                 self.execute_block(&statements, Rc::new(RefCell::new(block_env)))?;
@@ -306,6 +321,7 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
 pub struct RuntimeException {
     pub token: Token,
     pub message: String,
+    pub value: Option<LoxType>,
 }
 
 impl RuntimeException {
@@ -319,6 +335,7 @@ impl RuntimeException {
         Self {
             token,
             message: message.to_string(),
+            value: None,
         }
     }
 }

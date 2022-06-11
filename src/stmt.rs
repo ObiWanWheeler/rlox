@@ -27,6 +27,15 @@ pub enum Stmt {
         expression: Expr,
     },
 
+    Break {
+        token: Token
+    },
+    
+    Return {
+        token: Token,
+        return_value: Option<Expr>,
+    },
+
     Var {
         name: Token,
         initializer: Option<Expr>,
