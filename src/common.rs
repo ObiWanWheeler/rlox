@@ -51,7 +51,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
 pub const LOX_MAX_ARGUMENT_COUNT: usize = 255;
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub enum TokenType {
     // punctuation
     LeftParen,
@@ -105,7 +105,7 @@ pub enum TokenType {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Clone, Eq)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct Token {
     pub token_type: TokenType,
     pub raw: String,

@@ -1,5 +1,5 @@
-use crate::{interpreter::Interpreter, lexer::Lexer, parser::Parser};
-use std::io::Write;
+use crate::{interpreter::Interpreter, lexer::Lexer, parser::Parser, resolver::Resolver};
+use std::{io::Write, cell::RefCell, rc::Rc};
 
 static mut HAD_ERROR: bool = false;
 static mut HAD_RUNTIME_ERROR: bool = false;
@@ -13,11 +13,11 @@ pub fn run_file(file_path: &str) {
         }
     };
 
-    run(&file_data, &mut Interpreter::new());
+    run(&file_data, Rc::new(RefCell::new(Interpreter::new())));
 }
 
 pub fn run_interactive() {
-    let mut interpreter = Interpreter::new();
+    let interpreter = Rc::new(RefCell::new(Interpreter::new()));
     loop {
         unsafe { HAD_ERROR = false };
         unsafe { HAD_RUNTIME_ERROR = false };
@@ -32,11 +32,11 @@ pub fn run_interactive() {
             break;
         }
 
-        run(input.trim(), &mut interpreter);
+        run(input.trim(), Rc::clone(&interpreter));
     }
 }
 
-pub fn run(source: &str, interpreter: &mut Interpreter) {
+pub fn run(source: &str, interpreter: Rc<RefCell<Interpreter>>) {
     let lexer = Lexer::new(source);
     let tokens = lexer.collect_tokens();
 
@@ -50,8 +50,15 @@ pub fn run(source: &str, interpreter: &mut Interpreter) {
     if unsafe { HAD_ERROR } {
         return;
     }
+    
+    let mut resolver = Resolver::new(Rc::clone(&interpreter));
+    resolver.resolve(&statements);
 
-    interpreter.interpret(&statements);
+    if unsafe { HAD_ERROR } {
+        return;
+    }
+
+    interpreter.borrow_mut().interpret(&statements);
 }
 
 pub fn report_error() {

@@ -1,24 +1,30 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    common::{LoxType, Token, TokenType, LoxFunction},
+    common::{LoxFunction, LoxType, Token, TokenType},
     environment::Environment,
-    expr, lox, stmt, native_functions::Clock,
+    expr, lox,
+    native_functions::Clock,
+    stmt,
 };
 
 pub struct Interpreter {
     globals: Rc<RefCell<Environment>>,
     environment: Rc<RefCell<Environment>>,
+    locals: HashMap<Token, usize>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new(None)));
-        globals.borrow_mut().define("clock".to_string(), LoxType::Function(Rc::new(Clock)));
+        globals
+            .borrow_mut()
+            .define("clock".to_string(), LoxType::Function(Rc::new(Clock)));
 
         Self {
             globals: Rc::clone(&globals),
             environment: globals,
+            locals: HashMap::new(),
         }
     }
 
@@ -26,7 +32,11 @@ impl Interpreter {
         stmt::Visitor::visit_stmt(self, stmt)
     }
 
-    pub fn execute_block(&mut self, statements: &[stmt::Stmt], environment: Rc<RefCell<Environment>>) -> Result<(), RuntimeException> {
+    pub fn execute_block(
+        &mut self,
+        statements: &[stmt::Stmt],
+        environment: Rc<RefCell<Environment>>,
+    ) -> Result<(), RuntimeException> {
         let prev = Rc::clone(&self.environment);
         self.environment = environment;
 
@@ -54,8 +64,16 @@ impl Interpreter {
         Rc::clone(&self.globals)
     }
 
-    pub fn resolve(&mut self, _expr: &expr::Expr, _depth: usize) {
-        todo!()
+    pub fn resolve(&mut self, name: Token, depth: usize) {
+        self.locals.insert(name, depth);
+    }
+
+    pub fn lookup_variable(&mut self, name: &Token) -> Result<LoxType, RuntimeException> {
+        let distance = self.locals.get(name);
+        match distance {
+            Some(d) => self.environment.borrow().get_at(*d, &name),
+            None => self.globals.borrow().get(&name),
+        }
     }
 
     pub fn interpret(&mut self, statements: &[stmt::Stmt]) {
@@ -235,10 +253,17 @@ impl expr::Visitor<LoxType, RuntimeException> for Interpreter {
                     )),
                 }
             }
-            expr::Expr::Variable { name } => self.environment.borrow().get(name),
+            expr::Expr::Variable { name } => self.lookup_variable(name),
             expr::Expr::Assign { name, value } => {
                 let value = self.evaluate(value)?;
-                self.environment.borrow_mut().assign(name, value.clone())?;
+                let distance = self.locals.get(name);
+                match distance {
+                    Some(d) => self
+                        .environment
+                        .borrow_mut()
+                        .assign_at(*d, name, value.clone())?,
+                    None => self.globals.borrow_mut().assign(name, value.clone())?,
+                };
                 Ok(value)
             }
         }
@@ -282,7 +307,11 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 }
                 Ok(())
             }
-            stmt::Stmt::Break { token } => Err(RuntimeException { token: token.clone(), message: "break".to_string(), value: None}),
+            stmt::Stmt::Break { token } => Err(RuntimeException {
+                token: token.clone(),
+                message: "break".to_string(),
+                value: None,
+            }),
             stmt::Stmt::Print { expression } => {
                 let val = self.evaluate(expression)?;
                 println!("{}", val.to_string());
@@ -297,20 +326,37 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 self.environment.borrow_mut().define(name.raw.clone(), val);
                 Ok(())
             }
-            stmt::Stmt::Function { name, parameters, body } => {
-               let function = LoxFunction::new(name.clone(), parameters.to_vec(), body.to_vec(), Rc::clone(&self.environment));
-               self.environment.borrow_mut().define(name.raw.clone(), LoxType::Function(Rc::new(function)));
-               Ok(())
+            stmt::Stmt::Function {
+                name,
+                parameters,
+                body,
+            } => {
+                let function = LoxFunction::new(
+                    name.clone(),
+                    parameters.to_vec(),
+                    body.to_vec(),
+                    Rc::clone(&self.environment),
+                );
+                self.environment
+                    .borrow_mut()
+                    .define(name.raw.clone(), LoxType::Function(Rc::new(function)));
+                Ok(())
             }
-            stmt::Stmt::Return { token, return_value } => {
+            stmt::Stmt::Return {
+                token,
+                return_value,
+            } => {
                 let rv: LoxType;
                 if let Some(val) = return_value {
                     rv = self.evaluate(val)?;
-                }
-                else {
+                } else {
                     rv = LoxType::Nil;
                 }
-                Err(RuntimeException { token: token.clone(), message: "return".to_string(), value: Some(rv) })
+                Err(RuntimeException {
+                    token: token.clone(),
+                    message: "return".to_string(),
+                    value: Some(rv),
+                })
             }
             stmt::Stmt::Block { statements } => {
                 let block_env = Environment::new(Some(Rc::clone(&self.environment)));

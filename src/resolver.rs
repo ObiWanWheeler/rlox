@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, cell::RefCell, rc::Rc};
 
 use crate::{
     expr,
@@ -7,15 +7,19 @@ use crate::{
 };
 
 pub struct Resolver {
-    interpreter: Interpreter,
+    interpreter: Rc<RefCell<Interpreter>>,
     scopes: Vec<HashMap<String, bool>>,
+    current_function: FunctionType,
+    current_scope: ScopeType,
 }
 
 impl Resolver {
-    pub fn new() -> Self {
+    pub fn new(interpreter: Rc<RefCell<Interpreter>>) -> Self {
         Self {
-            interpreter: Interpreter::new(),
+            interpreter, 
             scopes: vec![],
+            current_function: FunctionType::None,
+            current_scope: ScopeType::None,
         }
     }
 
@@ -35,25 +39,32 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, name: String) {
+    fn declare(&mut self, name: &Token) {
         if self.scopes.is_empty() {
             return;
         }
-        self.scopes.last_mut().unwrap().insert(name, false);
+        
+        match self.scopes.last_mut().unwrap().insert(name.raw.to_string(), false) {
+            None => {},
+            Some(_) => {
+                // variable name already declared in this scope.
+                self.error(name.clone(), "Already a variable with this name in scope");
+            }
+        }
     }
 
-    fn define(&mut self, name: String) {
+    fn define(&mut self, name: &Token) {
         if self.scopes.is_empty() {
             return;
         }
 
-        self.scopes.last_mut().unwrap().insert(name, true);
+        self.scopes.last_mut().unwrap().insert(name.raw.to_string(), true);
     }
 
-    fn resolve_local(&mut self, expr: &expr::Expr, name: String) -> Result<(), ResolverError> {
+    fn resolve_local(&mut self, token: Token) -> Result<(), ResolverError> {
         for (i, scope) in self.scopes.iter().enumerate() {
-            if scope.contains_key(&name) {
-                self.interpreter.resolve(expr, self.scopes.len() - 1 -i);
+            if scope.contains_key(&token.raw) {
+                self.interpreter.borrow_mut().resolve(token, self.scopes.len() - 1 -i);
                 return Ok(())
             }
         }
@@ -61,9 +72,18 @@ impl Resolver {
     }
 
     fn error(&self, token: Token, message: &str) -> ResolverError {
-        println!("{}", message);
+        println!("Resolver: {} caused by {} at line {} column {}", message, token.raw, token.line, token.column);
         lox::report_error();
         ResolverError::new(token, message.to_string())
+    }
+
+    pub fn resolve(&mut self, statements: &[stmt::Stmt]) {
+        for stmt in statements {
+            match self.resolve_statement(stmt) {
+                Err(_) => {}
+                Ok(_) => {}
+            }
+        }
     }
 }
 
@@ -72,17 +92,17 @@ impl expr::Visitor<(), ResolverError> for Resolver {
         match expr {
             expr::Expr::Variable { name } => {
                 if !self.scopes.is_empty() 
-                    && !self.scopes.last().unwrap().get(&name.raw).unwrap_or(&false) {
+                    && self.scopes.last().unwrap().get(&name.raw).unwrap_or(&true) == &false {
                     Err(self.error(name.clone(), "Cannot use a variable in it's own initializer"))
                 }
                 else {
-                    self.resolve_local(expr, name.raw.clone())?;
+                    self.resolve_local(name.clone())?;
                     Ok(())
                 }
             }
             expr::Expr::Assign { name, value } => {
                 self.resolve_expr(value)?;
-                self.resolve_local(expr, name.raw.clone())?;
+                self.resolve_local(name.clone())?;
                 Ok(())
             }
             expr::Expr::Binary { left, right, .. } => {
@@ -121,22 +141,25 @@ impl stmt::Visitor<(), ResolverError> for Resolver {
                 Ok(())
             }
             stmt::Stmt::Var { name, initializer } => {
-                self.declare(name.raw.clone());
+                self.declare(name);
                 if let Some(init) = initializer {
                     self.resolve_expr(init)?;
                 }
-                self.define(name.raw.clone());
+                self.define(name);
                 Ok(())
             }
             stmt::Stmt::Function { name, parameters, body } => {
-                self.declare(name.raw.clone());
-                self.define(name.raw.clone());
+                self.declare(name);
+                self.define(name);
                 
+                let enclosing_function_type = self.current_function;
+                self.current_function = FunctionType::Function;
+
                 self.begin_scope();
                 
                 for param in parameters {
-                    self.declare(param.raw.clone());
-                    self.define(param.raw.clone());
+                    self.declare(param);
+                    self.define(param);
                 }
 
                 for stmt in (*body).iter() {
@@ -144,6 +167,7 @@ impl stmt::Visitor<(), ResolverError> for Resolver {
                 }
 
                 self.end_scope();
+                self.current_function = enclosing_function_type;
 
                 Ok(())
             }
@@ -157,16 +181,30 @@ impl stmt::Visitor<(), ResolverError> for Resolver {
                 Ok(()) 
             },
             stmt::Stmt::While { condition, then_branch, finally_branch } => {
+                let enclosing_scope_type = self.current_scope;
+                self.current_scope = ScopeType::Loop;
+
                 self.resolve_expr(condition)?;
                 self.resolve_statement(then_branch)?;
                 if let Some(b) = finally_branch {
                     self.resolve_statement(b)?;
                 }
+                
+                self.current_scope = enclosing_scope_type;
                 Ok(())
             },
             stmt::Stmt::Print { expression } => self.resolve_expr(expression),
-            stmt::Stmt::Break { .. } => Ok(()),
-            stmt::Stmt::Return { return_value, .. } => {
+            stmt::Stmt::Break { token } => {
+                if let ScopeType::None = self.current_scope {
+                    Err(self.error(token.clone(), "Cannot break from top level code"))
+                } else {
+                    Ok(())
+                }
+            },
+            stmt::Stmt::Return { return_value, token } => {
+                if let FunctionType::None = self.current_function {
+                    return Err(self.error(token.clone(), "Cannot return from top level code"));
+                }
                 if let Some(val) = return_value {
                     self.resolve_expr(val)?;
                 }
@@ -187,4 +225,16 @@ impl ResolverError {
             token, message,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum FunctionType {
+    None,
+    Function,
+}
+
+#[derive(Clone, Copy)]
+enum ScopeType {
+    None,
+    Loop,
 }
