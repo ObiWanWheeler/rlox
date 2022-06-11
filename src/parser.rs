@@ -58,7 +58,7 @@ impl Parser {
             TokenType::Identifier,
             "Expect 'funct' keyword be followed by function name",
         )?;
-        println!("{:?}", name);
+
         self.require_consume(TokenType::LeftParen, "Expect '(' after function name")?;
 
         let mut parameters = vec![];
@@ -96,6 +96,10 @@ impl Parser {
             self.for_statement()
         } else if self.match_next_token(&[TokenType::Print]) {
             self.print_statement()
+        } else if self.match_next_token(&[TokenType::Break]) {
+            self.break_statement()
+        } else if self.match_next_token(&[TokenType::Return]) {
+            self.return_statement()
         } else if self.match_next_token(&[TokenType::LeftBrace]) {
             Ok(Stmt::Block {
                 statements: self.block()?,
@@ -216,6 +220,22 @@ impl Parser {
         Ok(Stmt::Print { expression: value })
     }
 
+    fn break_statement(&mut self) -> Result<Stmt, ParseError> {
+        let break_ = self.require_consume(TokenType::Break, "Expect 'break'")?;
+        self.require_consume(TokenType::SemiColon, "Expect ';' after break")?;
+        Ok(Stmt::Break { token: break_ })
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt, ParseError> {
+        let return_ = self.require_consume(TokenType::Return, "Expect 'return'")?;
+        let mut return_value = None;
+        if !self.match_next_token(&[TokenType::SemiColon]) {
+            // not void
+            return_value = Some(self.expression()?);
+        }
+        self.require_consume(TokenType::SemiColon, "Expect ';' after return statement")?;
+        Ok(Stmt::Return { token: return_, return_value })
+    }
     fn block(&mut self) -> Result<Box<Vec<Stmt>>, ParseError> {
         // consume { token
         self.consume_token();

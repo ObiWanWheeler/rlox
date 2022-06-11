@@ -1,8 +1,8 @@
-use std::{fmt::Debug, rc::Rc, cell::RefCell};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use phf::phf_map;
 
-use crate::{interpreter::{Interpreter, RuntimeException}, stmt::Stmt, environment::Environment};
+use crate::{environment::Environment, interpreter::{Interpreter, RuntimeException}, stmt::Stmt};
 
 #[macro_export]
 macro_rules! token {
@@ -29,6 +29,7 @@ macro_rules! lexer_error {
 
 pub static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
    "and" => TokenType::And,
+   "break" => TokenType::Break,
    "class" => TokenType::Class,
    "else" => TokenType::Else,
    "false" => TokenType::False,
@@ -82,6 +83,7 @@ pub enum TokenType {
 
     // keywords
     And,
+    Break,
     Class,
     Else,
     False,
@@ -138,20 +140,16 @@ impl PartialEq for LoxType {
                 },
                 _ => false,
             },
-            Self::Bool(b) => {
-                match other {
-                    Self::Bool(c) => *b == *c,
-                    Self::Nil => *b == false,
-                    _ => false,
-                }
-            }
-            Self::Nil => {
-                match other {
-                    Self::Bool(false) => true,
-                    _ => false
-                }
-            }
-            Self::Function(_) => false
+            Self::Bool(b) => match other {
+                Self::Bool(c) => *b == *c,
+                Self::Nil => *b == false,
+                _ => false,
+            },
+            Self::Nil => match other {
+                Self::Bool(false) => true,
+                _ => false,
+            },
+            Self::Function(_) => false,
         }
     }
 }
@@ -196,15 +194,17 @@ impl PartialOrd for dyn LoxCallable {
 }
 
 pub struct LoxFunction {
-    name: Token,    
+    name: Token,
     parameters: Vec<Token>,
-    body: Vec<Stmt>
+    body: Vec<Stmt>,
 }
 
 impl LoxFunction {
     pub fn new(name: Token, parameters: Vec<Token>, body: Vec<Stmt>) -> Self {
         Self {
-            name, parameters, body
+            name,
+            parameters,
+            body,
         }
     }
 }
@@ -225,7 +225,17 @@ impl LoxCallable for LoxFunction {
             environment.define(param.raw.clone(), arg);
         }
 
-        interpreter.execute_block(&self.body, Rc::new(RefCell::new(environment)))?;
+        match interpreter.execute_block(&self.body, Rc::new(RefCell::new(environment))) {
+            Err(err) => {
+                if err.token.token_type == TokenType::Return {
+                    match err.value {
+                        None => return Ok(LoxType::Nil),
+                        Some(v) => return Ok(v),
+                    }
+                }
+            }
+            _ => {}
+        }
         // TODO add return types
         Ok(LoxType::Nil)
     }
@@ -233,11 +243,15 @@ impl LoxCallable for LoxFunction {
 
 impl ToString for LoxFunction {
     fn to_string(&self) -> String {
-        format!("<function> {:?} ({:?})", self.name.raw, self.parameters.iter().map(|tok| &tok.raw)) 
+        format!(
+            "<function> {:?} ({:?})",
+            self.name.raw,
+            self.parameters.iter().map(|tok| &tok.raw)
+        )
     }
 }
 
 pub fn is_punctuation(c: &char) -> bool {
     let punctuation = vec!['(', ')', '{', '}', '[', ']', ';', ',', '\'', '"', '.'];
     punctuation.contains(c)
-} 
+}

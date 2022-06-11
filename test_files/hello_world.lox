@@ -38,10 +38,17 @@ if (true)
     print "c = " + c + " in nest";
 }
 
+while (true) {
+  break;
+}
+
 var count = 1;
 count = count + 1;
 while (count <= 10)  
   count = count + 1;
+  while (true) {
+    break;
+  }
 finally
   print "loop done! count = " + count;  
   
@@ -55,3 +62,9 @@ funct say_hello(first_name, last_name) {
 }
 
 say_hello("Linus", "Torvalds");
+
+funct add(a, b) {
+  return a + b;
+}
+
+print add(1, 3);
