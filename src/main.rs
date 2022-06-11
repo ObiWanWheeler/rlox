@@ -8,6 +8,7 @@ pub mod lox;
 pub mod parser;
 pub mod stmt;
 pub mod native_functions;
+pub mod resolver;
 
 use clap::Parser;
 

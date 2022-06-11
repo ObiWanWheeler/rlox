@@ -197,14 +197,16 @@ pub struct LoxFunction {
     name: Token,
     parameters: Vec<Token>,
     body: Vec<Stmt>,
+    closure: Rc<RefCell<Environment>>
 }
 
 impl LoxFunction {
-    pub fn new(name: Token, parameters: Vec<Token>, body: Vec<Stmt>) -> Self {
+    pub fn new(name: Token, parameters: Vec<Token>, body: Vec<Stmt>, closure: Rc<RefCell<Environment>>) -> Self {
         Self {
             name,
             parameters,
             body,
+            closure,
         }
     }
 }
@@ -219,7 +221,7 @@ impl LoxCallable for LoxFunction {
         interpreter: &mut Interpreter,
         arguments: Vec<LoxType>,
     ) -> Result<LoxType, RuntimeException> {
-        let mut environment = Environment::new(Some(interpreter.globals()));
+        let mut environment = Environment::new(Some(Rc::clone(&self.closure)));
 
         for (param, arg) in self.parameters.iter().zip(arguments.into_iter()) {
             environment.define(param.raw.clone(), arg);

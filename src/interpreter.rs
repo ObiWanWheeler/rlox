@@ -54,6 +54,10 @@ impl Interpreter {
         Rc::clone(&self.globals)
     }
 
+    pub fn resolve(&mut self, _expr: &expr::Expr, _depth: usize) {
+        todo!()
+    }
+
     pub fn interpret(&mut self, statements: &[stmt::Stmt]) {
         for stmt in statements {
             if let Err(_) = self.execute(stmt) {
@@ -294,7 +298,7 @@ impl stmt::Visitor<(), RuntimeException> for Interpreter {
                 Ok(())
             }
             stmt::Stmt::Function { name, parameters, body } => {
-               let function = LoxFunction::new(name.clone(), parameters.to_vec(), body.to_vec());
+               let function = LoxFunction::new(name.clone(), parameters.to_vec(), body.to_vec(), Rc::clone(&self.environment));
                self.environment.borrow_mut().define(name.raw.clone(), LoxType::Function(Rc::new(function)));
                Ok(())
             }
