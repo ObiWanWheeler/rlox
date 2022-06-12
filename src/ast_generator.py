@@ -34,6 +34,8 @@ if __name__ == "__main__":
         "Assign: name Token, value Box<Expr>",
         "Binary: left Box<Expr>, right Box<Expr>, operator Token",
         "Call: callee Box<Expr>, paren Token, arguments Vec<Box<Expr>>",
+        "Get: object Box<Expr>, name Token",
+        "Set: object Box<Expr>, name Token, value Box<Expr>",
         "Grouping: expression Box<Expr>",
         "Literal: value LiteralType",
         "Logical: left Box<Expr>, operator Token, right Box<Expr>"
@@ -51,7 +53,8 @@ if __name__ == "__main__":
             "Break: token Token",
             "Return: token Token, return_value Option<Expr>",
             "Var: name Token, initializer Option<Expr>",
-            "Function: name Token, parameters: Vec<Token>, body Vec<Box<Stmt>>",
+            "Class: name Token, methods Vec<Box<Stmt>>"
+            "Function: name Token, parameters Vec<Token>, body Vec<Box<Stmt>>",
             ]    
     define_ast("src/stmt_new.rs", "Stmt", stmt_types)
 

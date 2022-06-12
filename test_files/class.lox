@@ -1,0 +1,13 @@
+class Pastry {
+  meth bake() {
+    return "baked";
+  }
+}
+
+print Pastry;
+print Pastry();
+
+var p = Pastry();
+p.taste = "sweet";
+print p.taste;
+

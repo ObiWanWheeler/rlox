@@ -28,6 +28,8 @@ impl Parser {
             self.var_declaration()
         } else if self.match_next_token(&[TokenType::Funct]) {
             self.function_declaration()
+        } else if self.match_next_token(&[TokenType::Class]) {
+            self.class_declaration()
         } else {
             self.statement()
         }
@@ -54,6 +56,10 @@ impl Parser {
     fn function_declaration(&mut self) -> Result<Stmt, ParseError> {
         // consume funct token
         self.consume_token();
+        self.function()
+    }
+
+    fn function(&mut self) -> Result<Stmt, ParseError> {
         let name = self.require_consume(
             TokenType::Identifier,
             "Expect 'funct' keyword be followed by function name",
@@ -84,6 +90,32 @@ impl Parser {
             name,
             parameters,
             body: self.block()?,
+        })
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
+        // consume class token
+        self.consume_token();
+
+        let name = self.require_consume(
+            TokenType::Identifier,
+            "Expect class name after 'class' keyword",
+        )?;
+        self.require_consume(TokenType::LeftBrace, "Expect '{' to open class body")?;
+
+        let mut methods = vec![];
+        while self.match_next_token(&[TokenType::Meth]) {
+            // more methods to come
+            // consume meth token
+            self.consume_token();
+            methods.push(self.function()?);
+        }
+
+        self.require_consume(TokenType::RightBrace, "Expect '}' to close class body")?;
+
+        Ok(Stmt::Class {
+            name,
+            methods: Box::new(methods),
         })
     }
 
@@ -234,7 +266,10 @@ impl Parser {
             return_value = Some(self.expression()?);
         }
         self.require_consume(TokenType::SemiColon, "Expect ';' after return statement")?;
-        Ok(Stmt::Return { token: return_, return_value })
+        Ok(Stmt::Return {
+            token: return_,
+            return_value,
+        })
     }
     fn block(&mut self) -> Result<Box<Vec<Stmt>>, ParseError> {
         // consume { token
@@ -273,11 +308,16 @@ impl Parser {
                     name,
                     value: Box::new(value),
                 });
+            } else if let Expr::Get { object, name } = expr {
+                return Ok(Expr::Set {
+                    object,
+                    name,
+                    value: Box::new(value),
+                });
             }
 
             self.error(&equals, "Invalid assignment target.");
         }
-
         Ok(expr)
     }
 
@@ -395,32 +435,51 @@ impl Parser {
     }
 
     fn call(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.primary()?;
-        if self.match_next_token(&[TokenType::LeftParen]) {
-            // consume left paren
-            let left_paren = self.consume_token().unwrap();
-            // it's a function call
-            let mut arguments = vec![];
-            while !self.match_next_token(&[TokenType::RightParen]) {
-                // still have args
-                arguments.push(self.expression()?);
-                if arguments.len() > LOX_MAX_ARGUMENT_COUNT {
-                    self.error(&left_paren, "Exceeded max argument count");
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.match_next_token(&[TokenType::LeftParen]) {
+                // consume left paren
+                let left_paren = self.consume_token().unwrap();
+                // it's a function call
+                let mut arguments = vec![];
+                while !self.match_next_token(&[TokenType::RightParen]) {
+                    // still have args
+                    arguments.push(self.expression()?);
+                    if arguments.len() > LOX_MAX_ARGUMENT_COUNT {
+                        self.error(&left_paren, "Exceeded max argument count");
+                    }
+                    if self.match_next_token(&[TokenType::RightParen]) {
+                        break;
+                    }
+                    self.require_consume(TokenType::Comma, "Expect arguments are comma seperated")?;
                 }
-                if self.match_next_token(&[TokenType::RightParen]) {
-                    break;
-                }
-                self.require_consume(TokenType::Comma, "Expect arguments are comma seperated")?;
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    paren: self.require_consume(
+                        TokenType::RightParen,
+                        "Expect ')' closing function call",
+                    )?,
+                    arguments: Box::new(arguments),
+                };
+            } else if self.match_next_token(&[TokenType::Dot]) {
+                // it's a instance access
+                // consume the dot
+                self.consume_token();
+                let name = self.require_consume(
+                    TokenType::Identifier,
+                    "Expect identifier after '.' operator on object",
+                )?;
+                expr = Expr::Get {
+                    object: Box::new(expr),
+                    name,
+                };
+            } else {
+                break;
             }
-            return Ok(Expr::Call {
-                callee: Box::new(expr),
-                paren: self
-                    .require_consume(TokenType::RightParen, "Expect ')' closing function call")?,
-                arguments: Box::new(arguments),
-            });
-        } else {
-            return Ok(expr);
         }
+
+        Ok(expr)
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {

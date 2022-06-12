@@ -45,6 +45,11 @@ pub enum Stmt {
         name: Token,
         parameters: Vec<Token>,
         body: Box<Vec<Stmt>>,
+    },
+    
+    Class {
+        name: Token,
+        methods: Box<Vec<Stmt>>
     }
 }
 

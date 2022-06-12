@@ -1,4 +1,4 @@
-use std::{collections::HashMap, cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     common::{LoxType, Token},
@@ -7,7 +7,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    values: HashMap<String, LoxType>,
+    values: HashMap<String, Rc<RefCell<LoxType>>>,
     pub parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -19,15 +19,15 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: String, value: LoxType) {
+    pub fn define(&mut self, name: String, value: Rc<RefCell<LoxType>>) {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: &Token) -> Result<LoxType, RuntimeException> {
+    pub fn get(&self, name: &Token) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
         if let Some(val) = self.values.get(&name.raw) {
-            Ok(val.clone())
+            Ok(Rc::clone(val))
         } else if let Some(ref parent) = self.parent {
-            parent.borrow().get(name)
+            RefCell::borrow(&parent).get(name)
         } else {
             Err(RuntimeException::report(
                 name.clone(),
@@ -36,7 +36,62 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, name: &Token, value: LoxType) -> Result<(), RuntimeException> {
+    pub fn get_at(
+        &self,
+        distance: usize,
+        name: &Token,
+    ) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
+        if distance == 0 {
+            match self.values.get(&name.raw) {
+                Some(v) => Ok(Rc::clone(v)),
+                None => Err(RuntimeException::report(
+                    name.clone(),
+                    &format!(
+                        "No variable with name {} at depth {}",
+                        name.raw.clone(),
+                        distance
+                    ),
+                )),
+            }
+        } else {
+            match RefCell::borrow(&self.ancestor(distance))
+                .values
+                .get(&name.raw)
+            {
+                Some(v) => Ok(Rc::clone(v)),
+                None => Err(RuntimeException::report(
+                    name.clone(),
+                    &format!(
+                        "No variable with name {} at depth {}",
+                        name.raw.clone(),
+                        distance
+                    ),
+                )),
+            }
+        }
+    }
+
+    fn ancestor(&self, distance: usize) -> Rc<RefCell<Environment>> {
+        let mut env = self.parent().expect("No parent scope at this distance");
+        for _ in 1..distance {
+            let outer = RefCell::borrow(&env)
+                .parent()
+                .expect("Global scope has no parent scope");
+            env = outer;
+        }
+
+        env
+    }
+
+    pub fn parent(&self) -> Option<Rc<RefCell<Environment>>> {
+        Some(Rc::clone(self.parent.as_ref()?))
+    }
+
+    pub fn assign(
+        &mut self,
+        name: &Token,
+        value: Rc<RefCell<LoxType>>,
+    ) -> Result<(), RuntimeException> {
         if self.values.contains_key(&name.raw) {
             self.values.insert(name.raw.clone(), value);
             return Ok(());
@@ -48,6 +103,36 @@ impl Environment {
                 name.clone(),
                 &format!("Attempted to assign to undefined variable {}", name.raw),
             ))
+        }
+    }
+
+    pub fn assign_at(
+        &mut self,
+        distance: usize,
+        name: &Token,
+        value: Rc<RefCell<LoxType>>,
+    ) -> Result<(), RuntimeException> {
+        if distance == 0 {
+            match self.values.insert(name.raw.to_string(), value) {
+                Some(_) => Ok(()),
+                None => Err(RuntimeException::report(
+                    name.clone(),
+                    &format!("Unable to assign to undefined variable {}", name.raw),
+                )),
+            }
+        } else {
+            match self
+                .ancestor(distance)
+                .borrow_mut()
+                .values
+                .insert(name.raw.to_string(), value)
+            {
+                Some(_) => Ok(()),
+                None => Err(RuntimeException::report(
+                    name.clone(),
+                    &format!("Unable to assign to undefined variable {}", name.raw),
+                )),
+            }
         }
     }
 }
