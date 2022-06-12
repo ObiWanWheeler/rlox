@@ -1,8 +1,12 @@
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use phf::phf_map;
 
-use crate::{environment::Environment, interpreter::{Interpreter, RuntimeException}, stmt::Stmt};
+use crate::{
+    environment::Environment,
+    interpreter::{Interpreter, RuntimeException},
+    stmt::Stmt,
+};
 
 #[macro_export]
 macro_rules! token {
@@ -37,6 +41,7 @@ pub static KEYWORDS: phf::Map<&'static str, TokenType> = phf_map! {
    "for" => TokenType::For,
    "finally" => TokenType::Finally,
    "if" => TokenType::If,
+   "meth" => TokenType::Meth,
    "nil" => TokenType::Nil,
    "or" => TokenType::Or,
    "print" => TokenType::Print,
@@ -91,6 +96,7 @@ pub enum TokenType {
     Finally,
     For,
     If,
+    Meth,
     Nil,
     Or,
     Print,
@@ -119,6 +125,8 @@ pub enum LoxType {
     Bool(bool),
     Nil,
     Function(Rc<dyn LoxCallable>),
+    Class(LoxClass),
+    Instance(LoxInstance),
 }
 
 impl PartialEq for LoxType {
@@ -150,6 +158,14 @@ impl PartialEq for LoxType {
                 _ => false,
             },
             Self::Function(_) => false,
+            Self::Class(c) => match other {
+                Self::Class(c2) => c.eq(c2),
+                _ => false,
+            },
+            Self::Instance(i) => match other {
+                Self::Instance(i2) => i.eq(i2),
+                _ => false,
+            },
         }
     }
 }
@@ -161,7 +177,9 @@ impl ToString for LoxType {
             Self::Strang(v) => v.to_string(),
             Self::Bool(v) => v.to_string(),
             Self::Nil => "nil".to_string(),
-            Self::Function(f) => format!("function <{}>", f.arity()),
+            Self::Function(f) => f.to_string(),
+            Self::Class(c) => c.to_string(),
+            Self::Instance(i) => i.to_string(),
         }
     }
 }
@@ -171,8 +189,8 @@ pub trait LoxCallable {
     fn call(
         &self,
         interpreter: &mut Interpreter,
-        arguments: Vec<LoxType>,
-    ) -> Result<LoxType, RuntimeException>;
+        arguments: Vec<Rc<RefCell<LoxType>>>,
+    ) -> Result<Rc<RefCell<LoxType>>, RuntimeException>;
 }
 
 impl Debug for dyn LoxCallable {
@@ -193,15 +211,26 @@ impl PartialOrd for dyn LoxCallable {
     }
 }
 
+impl ToString for dyn LoxCallable {
+    fn to_string(&self) -> String {
+        format!("function <{}>", self.arity())
+    }
+}
+
 pub struct LoxFunction {
     name: Token,
     parameters: Vec<Token>,
     body: Vec<Stmt>,
-    closure: Rc<RefCell<Environment>>
+    closure: Rc<RefCell<Environment>>,
 }
 
 impl LoxFunction {
-    pub fn new(name: Token, parameters: Vec<Token>, body: Vec<Stmt>, closure: Rc<RefCell<Environment>>) -> Self {
+    pub fn new(
+        name: Token,
+        parameters: Vec<Token>,
+        body: Vec<Stmt>,
+        closure: Rc<RefCell<Environment>>,
+    ) -> Self {
         Self {
             name,
             parameters,
@@ -219,8 +248,8 @@ impl LoxCallable for LoxFunction {
     fn call(
         &self,
         interpreter: &mut Interpreter,
-        arguments: Vec<LoxType>,
-    ) -> Result<LoxType, RuntimeException> {
+        arguments: Vec<Rc<RefCell<LoxType>>>,
+    ) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
         let mut environment = Environment::new(Some(Rc::clone(&self.closure)));
 
         for (param, arg) in self.parameters.iter().zip(arguments.into_iter()) {
@@ -231,15 +260,14 @@ impl LoxCallable for LoxFunction {
             Err(err) => {
                 if err.token.token_type == TokenType::Return {
                     match err.value {
-                        None => return Ok(LoxType::Nil),
+                        None => return Ok(Rc::new(RefCell::new(LoxType::Nil))),
                         Some(v) => return Ok(v),
                     }
                 }
             }
             _ => {}
         }
-        // TODO add return types
-        Ok(LoxType::Nil)
+        Ok(Rc::new(RefCell::new(LoxType::Nil)))
     }
 }
 
@@ -250,6 +278,84 @@ impl ToString for LoxFunction {
             self.name.raw,
             self.parameters.iter().map(|tok| &tok.raw)
         )
+    }
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub struct LoxClass {
+    name: String,
+}
+
+impl LoxClass {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+impl ToString for LoxClass {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+impl LoxCallable for LoxClass {
+    fn arity(&self) -> usize {
+        0
+    }
+
+    fn call(
+        &self,
+        _: &mut Interpreter,
+        _: Vec<Rc<RefCell<LoxType>>>,
+    ) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
+        Ok(Rc::new(RefCell::new(LoxType::Instance(LoxInstance::new(
+            self.clone(),
+        )))))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoxInstance {
+    class_: LoxClass,
+    fields: HashMap<String, Rc<RefCell<LoxType>>>,
+}
+
+impl LoxInstance {
+    pub fn new(class_: LoxClass) -> Self {
+        Self {
+            class_,
+            fields: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, name: &Token) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
+        match self.fields.get(&name.raw) {
+            Some(v) => Ok(Rc::clone(v)),
+            None => Err(RuntimeException::report(
+                name.clone(),
+                &format!(
+                    "Property {} does not exist on {}",
+                    name.raw,
+                    self.to_string()
+                ),
+            )),
+        }
+    }
+
+    pub fn set(&mut self, name: &Token, value: Rc<RefCell<LoxType>>) {
+        self.fields.insert(name.raw.to_string(), value);
+    }
+}
+
+impl PartialOrd for LoxInstance {
+    fn partial_cmp(&self, _: &Self) -> Option<std::cmp::Ordering> {
+        None
+    }
+}
+
+impl ToString for LoxInstance {
+    fn to_string(&self) -> String {
+        format!("{} instance", self.class_.to_string())
     }
 }
 

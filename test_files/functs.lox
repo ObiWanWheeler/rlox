@@ -23,3 +23,14 @@ funct make_counter() {
 var counter = make_counter();
 print counter();
 print counter();
+
+var a = "global";
+{
+  funct showA() {
+    print a;
+  }
+
+  showA();
+  var a = "block";
+  showA();
+}

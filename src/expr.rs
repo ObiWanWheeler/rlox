@@ -19,6 +19,17 @@ pub enum Expr {
         arguments: Box<Vec<Expr>>
     },
 
+    Get {
+        object: Box<Expr>,
+        name: Token,
+    },
+
+    Set {
+        object: Box<Expr>,
+        name: Token,
+        value: Box<Expr>
+    },
+
     Grouping {
         expression: Box<Expr>,
     },

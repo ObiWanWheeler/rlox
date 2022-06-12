@@ -7,7 +7,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    values: HashMap<String, LoxType>,
+    values: HashMap<String, Rc<RefCell<LoxType>>>,
     pub parent: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -19,13 +19,13 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: String, value: LoxType) {
+    pub fn define(&mut self, name: String, value: Rc<RefCell<LoxType>>) {
         self.values.insert(name, value);
     }
 
-    pub fn get(&self, name: &Token) -> Result<LoxType, RuntimeException> {
+    pub fn get(&self, name: &Token) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
         if let Some(val) = self.values.get(&name.raw) {
-            Ok(val.clone())
+            Ok(Rc::clone(val))
         } else if let Some(ref parent) = self.parent {
             RefCell::borrow(&parent).get(name)
         } else {
@@ -36,10 +36,14 @@ impl Environment {
         }
     }
 
-    pub fn get_at(&self, distance: usize, name: &Token) -> Result<LoxType, RuntimeException> {
+    pub fn get_at(
+        &self,
+        distance: usize,
+        name: &Token,
+    ) -> Result<Rc<RefCell<LoxType>>, RuntimeException> {
         if distance == 0 {
             match self.values.get(&name.raw) {
-                Some(v) => Ok(v.clone()),
+                Some(v) => Ok(Rc::clone(v)),
                 None => Err(RuntimeException::report(
                     name.clone(),
                     &format!(
@@ -54,7 +58,7 @@ impl Environment {
                 .values
                 .get(&name.raw)
             {
-                Some(v) => Ok(v.clone()),
+                Some(v) => Ok(Rc::clone(v)),
                 None => Err(RuntimeException::report(
                     name.clone(),
                     &format!(
@@ -83,7 +87,11 @@ impl Environment {
         Some(Rc::clone(self.parent.as_ref()?))
     }
 
-    pub fn assign(&mut self, name: &Token, value: LoxType) -> Result<(), RuntimeException> {
+    pub fn assign(
+        &mut self,
+        name: &Token,
+        value: Rc<RefCell<LoxType>>,
+    ) -> Result<(), RuntimeException> {
         if self.values.contains_key(&name.raw) {
             self.values.insert(name.raw.clone(), value);
             return Ok(());
@@ -102,7 +110,7 @@ impl Environment {
         &mut self,
         distance: usize,
         name: &Token,
-        value: LoxType,
+        value: Rc<RefCell<LoxType>>,
     ) -> Result<(), RuntimeException> {
         if distance == 0 {
             match self.values.insert(name.raw.to_string(), value) {
